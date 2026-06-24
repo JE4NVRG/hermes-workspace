@@ -1,15 +1,13 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
-import { seedAgentPresets } from './agent-presets'
 import {
   AiBrain03Icon,
-  Settings01Icon,
   PlusSignIcon,
+  Settings01Icon,
 } from '@hugeicons/core-free-icons'
-import { cn } from '@/lib/utils'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Button } from '@/components/ui/button'
-import { formatRelativeTime } from '@/screens/dashboard/lib/formatters'
+import { seedAgentPresets } from './agent-presets'
 import { OrchestratorCard } from './components/orchestrator-card'
 import { OperationsAgentCard } from './components/operations-agent-card'
 import { OperationsAgentDetail } from './components/operations-agent-detail'
@@ -18,6 +16,10 @@ import { OperationsSettingsModal } from './components/operations-settings-modal'
 import { FullOutputsView } from './components/full-outputs-view'
 import { AgentBusPanel } from './components/agent-bus-panel'
 import { useOperations } from './hooks/use-operations'
+import type { CSSProperties } from 'react'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { formatRelativeTime } from '@/screens/dashboard/lib/formatters'
 
 export const THEME_STYLE: CSSProperties = {
   ['--theme-bg' as string]: 'var(--color-surface)',
@@ -43,12 +45,74 @@ export const THEME_STYLE: CSSProperties = {
   ['--theme-warning-border' as string]: 'color-mix(in srgb, var(--theme-warning) 35%, white)',
 }
 
+type MainAgentSmoke = {
+  ok: boolean
+  status: number
+  checkedAt: number
+  expiresAt: number
+  durationMs: number
+  error: string | null
+}
+
+const MAIN_AGENT_SMOKE_TTL_MS = 60_000
+
+function formatDurationMs(durationMs: number): string {
+  if (durationMs < 1000) return `${Math.round(durationMs)}ms`
+  return `${(durationMs / 1000).toFixed(1)}s`
+}
+
+function formatExpiryLabel(expiresAt: number, now: number): string {
+  const diff = expiresAt - now
+  const seconds = Math.max(0, Math.ceil(Math.abs(diff) / 1000))
+  if (diff >= 0) return `expires in ${seconds}s`
+  return `expired ${seconds}s ago`
+}
+
+async function fetchMainAgentSmoke(): Promise<MainAgentSmoke> {
+  const startedAt = performance.now()
+  const checkedAt = Date.now()
+  try {
+    const response = await fetch('/api/ping', { cache: 'no-store' })
+    const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; status?: number }
+    const durationMs = performance.now() - startedAt
+    return {
+      ok: response.ok && payload.ok !== false,
+      status: payload.status ?? response.status,
+      checkedAt,
+      expiresAt: checkedAt + MAIN_AGENT_SMOKE_TTL_MS,
+      durationMs,
+      error: payload.error ?? null,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      checkedAt,
+      expiresAt: checkedAt + MAIN_AGENT_SMOKE_TTL_MS,
+      durationMs: performance.now() - startedAt,
+      error: error instanceof Error ? error.message : 'Smoke request failed',
+    }
+  }
+}
+
 export function OperationsScreen() {
   useEffect(() => { seedAgentPresets() }, [])
   const [newAgentOpen, setNewAgentOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsAgentId, setSettingsAgentId] = useState<string | null>(null)
   const [view, setView] = useState<'overview' | 'outputs'>('overview')
+  const [now, setNow] = useState(() => Date.now())
+  const mainAgentSmokeQuery = useQuery({
+    queryKey: ['operations', 'main-agent-smoke'],
+    queryFn: fetchMainAgentSmoke,
+    refetchInterval: MAIN_AGENT_SMOKE_TTL_MS,
+    staleTime: 15_000,
+  })
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 5_000)
+    return () => window.clearInterval(interval)
+  }, [])
   const {
     agents,
     recentActivity,
@@ -74,6 +138,22 @@ export function OperationsScreen() {
     (cronJobsQuery.error instanceof Error && cronJobsQuery.error.message) ||
     null
   const settingsAgent = agents.find((agent) => agent.id === settingsAgentId) ?? null
+  const auditableRecentActivity = useMemo(() => {
+    const smoke = mainAgentSmokeQuery.data
+    if (!smoke) return recentActivity
+
+    const statusLabel = smoke.ok && smoke.expiresAt >= now ? 'OK' : smoke.ok ? 'EXPIRED' : 'FAILED'
+    const reason = smoke.error ? ` · ${smoke.error}` : ''
+    const smokeEvent = {
+      id: `main-agent-smoke-${smoke.checkedAt}`,
+      agentId: 'main-agent',
+      summary: `operational smoke ${statusLabel} · status ${smoke.status || 'network'} · roundtrip ${formatDurationMs(smoke.durationMs)} · age ${formatRelativeTime(smoke.checkedAt)} · ${formatExpiryLabel(smoke.expiresAt, now)}${reason}`,
+      timestamp: smoke.checkedAt,
+      source: 'session' as const,
+    }
+
+    return [smokeEvent, ...recentActivity].slice(0, settings.activityFeedLength)
+  }, [mainAgentSmokeQuery.data, now, recentActivity, settings.activityFeedLength])
 
   return (
     <main
@@ -212,9 +292,11 @@ export function OperationsScreen() {
                 </div>
               </div>
               <div className="mt-4 space-y-3">
-                {recentActivity.length > 0 ? (
-                  recentActivity.map((activity) => {
-                    const agent = agents.find((entry) => entry.id === activity.agentId)
+                {auditableRecentActivity.length > 0 ? (
+                  auditableRecentActivity.map((activity) => {
+                    const agent = activity.agentId === 'main-agent'
+                      ? { name: 'Main Agent', meta: { emoji: activity.summary.includes('FAILED') ? '⚠️' : '🟢' } }
+                      : agents.find((entry) => entry.id === activity.agentId)
                     return (
                       <div
                         key={activity.id}

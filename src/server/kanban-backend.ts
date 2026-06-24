@@ -33,12 +33,28 @@ export type KanbanBackendMeta = {
 
 type KanbanBackend = {
   meta(): KanbanBackendMeta
-  list(): SwarmKanbanCard[] | Promise<SwarmKanbanCard[]>
+  list(filters?: ListKanbanFilters): SwarmKanbanCard[] | Promise<SwarmKanbanCard[]>
   create(input: CreateSwarmKanbanCardInput): SwarmKanbanCard | Promise<SwarmKanbanCard>
   update(
     cardId: string,
     updates: UpdateSwarmKanbanCardInput,
   ): SwarmKanbanCard | null | Promise<SwarmKanbanCard | null>
+}
+
+export type ListKanbanFilters = {
+  missionId?: string | null
+  status?: string | null
+  operational?: boolean
+}
+
+const OPERATIONAL_STATUSES = new Set(['ready', 'running', 'review', 'blocked'])
+
+function applyKanbanFilters(cards: SwarmKanbanCard[], filters: ListKanbanFilters = {}): SwarmKanbanCard[] {
+  let next = cards
+  if (filters.missionId) next = next.filter((card) => card.missionId === filters.missionId)
+  if (filters.status) next = next.filter((card) => card.status === filters.status)
+  if (filters.operational) next = next.filter((card) => OPERATIONAL_STATUSES.has(String(card.status)))
+  return next
 }
 
 // Map upstream Hermes kanban statuses (triage/todo/ready/running/done/blocked
@@ -113,7 +129,7 @@ function dashboardTaskToCard(task: DashboardKanbanTask): SwarmKanbanCard {
     assignedWorker: task.assignee ?? null,
     reviewer: null,
     status: mapDashboardStatusToLane(task.status),
-    missionId: null,
+    missionId: task.tenant ?? task.mission_id ?? null,
     reportPath: null,
     createdBy: task.created_by ?? 'hermes-kanban',
     createdAt,
@@ -127,6 +143,7 @@ type ClaudeTaskRow = {
   body?: string | null
   status?: string | null
   assignee?: string | null
+  tenant?: string | null
   created_at?: number | string | null
   updated_at?: number | string | null
   parents_json?: string | null
@@ -225,6 +242,7 @@ function claudeTaskProjection(): string {
     'tasks.body,',
     'tasks.status,',
     'tasks.assignee,',
+    'tasks.tenant,',
     'tasks.created_at,',
     'coalesce(tasks.last_heartbeat_at, tasks.completed_at, tasks.started_at, tasks.created_at) as updated_at,',
     "coalesce((select json_group_array(parent_id) from task_links where child_id = tasks.id), '[]') as parents_json,",
@@ -380,7 +398,7 @@ function claudeTaskToCard(task: ClaudeTaskRow): SwarmKanbanCard {
     assignedWorker: task.assignee ?? null,
     reviewer: null,
     status: mapClaudeStatus(task.status),
-    missionId: null,
+    missionId: task.tenant ?? null,
     reportPath: null,
     createdBy: 'claude-kanban',
     createdAt,
@@ -403,8 +421,8 @@ const localBackend: KanbanBackend = {
       details: 'Using local Swarm board JSON store.',
     }
   },
-  list() {
-    return listSwarmKanbanCards()
+  list(filters) {
+    return applyKanbanFilters(listSwarmKanbanCards(), filters)
   },
   create(input) {
     return createSwarmKanbanCard(input)
@@ -428,8 +446,8 @@ const claudeBackend: KanbanBackend = {
         : detection.reason ?? 'Hermes Kanban not detected.',
     }
   },
-  list() {
-    return readClaudeTasks().map(claudeTaskToCard)
+  list(filters) {
+    return applyKanbanFilters(readClaudeTasks().map(claudeTaskToCard), filters)
   },
   create(input) {
     const detection = detectClaudeKanban()
@@ -458,7 +476,7 @@ const claudeBackend: KanbanBackend = {
     const statements = [
       'begin immediate;',
       'insert into tasks (',
-      'id, title, body, assignee, status, priority, created_by, created_at, workspace_kind, workspace_path, idempotency_key',
+      'id, title, body, assignee, status, priority, created_by, created_at, workspace_kind, workspace_path, idempotency_key, tenant',
       ') values (',
       [
         sqliteQuote(taskId),
@@ -472,6 +490,7 @@ const claudeBackend: KanbanBackend = {
         sqliteQuote('scratch'),
         sqliteQuote(path.join(detection.workspacePath, 'workspaces', taskId)),
         idempotencyKey ? sqliteQuote(idempotencyKey) : 'NULL',
+        input.missionId?.trim() ? sqliteQuote(input.missionId.trim()) : 'NULL',
       ].join(', '),
       ');',
       ...linkStatements,
@@ -489,6 +508,7 @@ const claudeBackend: KanbanBackend = {
     if (typeof updates.title === 'string' && updates.title.trim()) assignments.push(`title = ${sqliteQuote(updates.title.trim())}`)
     if (typeof updates.spec === 'string') assignments.push(`body = ${sqliteQuote(updates.spec)}`)
     if (updates.assignedWorker !== undefined) assignments.push(`assignee = ${updates.assignedWorker?.trim() ? sqliteQuote(updates.assignedWorker.trim()) : 'NULL'}`)
+    if (updates.missionId !== undefined) assignments.push(`tenant = ${updates.missionId?.trim() ? sqliteQuote(updates.missionId.trim()) : 'NULL'}`)
     if (updates.status) {
       const status = mapBoardStatus(updates.status)
       assignments.push(`status = ${sqliteQuote(status)}`)
@@ -526,7 +546,7 @@ const dashboardProxyBackend: KanbanBackend = {
         : 'Hermes Dashboard kanban plugin not detected.',
     }
   },
-  async list() {
+  async list(filters) {
     const board = await fetchDashboardKanbanBoard()
     const cards: SwarmKanbanCard[] = []
     for (const column of board.columns) {
@@ -534,7 +554,7 @@ const dashboardProxyBackend: KanbanBackend = {
         cards.push(dashboardTaskToCard(task))
       }
     }
-    return cards.sort(
+    return applyKanbanFilters(cards, filters).sort(
       (a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title),
     )
   },
@@ -611,8 +631,8 @@ export function getKanbanBackendMeta(): KanbanBackendMeta {
   return resolveKanbanBackend().meta()
 }
 
-export async function listKanbanCards(): Promise<SwarmKanbanCard[]> {
-  return Promise.resolve(resolveKanbanBackend().list())
+export async function listKanbanCards(filters: ListKanbanFilters = {}): Promise<SwarmKanbanCard[]> {
+  return Promise.resolve(resolveKanbanBackend().list(filters))
 }
 
 export async function createKanbanCard(

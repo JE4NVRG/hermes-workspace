@@ -1,12 +1,18 @@
-import { join, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { getHermesRoot, getProfilesDir, getLocalBinDir } from './claude-paths'
+import { join, resolve } from 'node:path'
+import { getHermesRoot, getLocalBinDir, getProfilesDir } from './claude-paths'
 
 export const SWARM_CANONICAL_REPO = resolve(process.cwd())
-export const SWARM_MEMORY_ROOT = process.env.HERMES_SWARM_MEMORY_ROOT || join(homedir(), 'hermes-workspace')
+export const SWARM_MEMORY_ROOT = join(homedir(), '.openclaw', 'workspace')
 export const SWARM_MEMORY_HANDOFFS = join(SWARM_MEMORY_ROOT, 'memory')
-export const SWARM_FORBIDDEN_PATHS: string[] = []
+export const SWARM_FORBIDDEN_PATHS: Array<string> = [
+  // Keep this empty in Jean's canonical local setup. The canonical Workspace
+  // repo is also the writable Swarm repo, so marking it forbidden made the
+  // environment report contradict itself (`writableRoots` and `forbiddenRoots`
+  // both pointing at ~/hermes-workspace). Add legacy paths here only if a
+  // separate deprecated clone exists.
+]
 
 export type SwarmEnvironment = {
   canonicalRepo: string
@@ -23,11 +29,11 @@ export type SwarmEnvironment = {
   defaultBuildCommand: string
   defaultTestCommand: string
   defaultDevCommand: string
-  runtimeApis: string[]
-  writableRoots: string[]
-  readOnlyRoots: string[]
-  forbiddenRoots: string[]
-  notes: string[]
+  runtimeApis: Array<string>
+  writableRoots: Array<string>
+  readOnlyRoots: Array<string>
+  forbiddenRoots: Array<string>
+  notes: Array<string>
 }
 
 export function getSwarmEnvironment(): SwarmEnvironment {
@@ -49,7 +55,7 @@ export function getSwarmEnvironment(): SwarmEnvironment {
     tmuxSessionPattern: 'swarm-<workerId>',
     defaultBuildCommand: `cd ${SWARM_CANONICAL_REPO} && npm run build`,
     defaultTestCommand: `cd ${SWARM_CANONICAL_REPO} && npm test -- src/screens/swarm2`,
-    defaultDevCommand: `cd ${SWARM_CANONICAL_REPO} && PORT=3002 npm run dev`,
+    defaultDevCommand: `cd ${SWARM_CANONICAL_REPO} && PORT=3010 npm run dev`,
     runtimeApis: [
       '/api/swarm-environment',
       '/api/swarm-runtime',
@@ -63,10 +69,7 @@ export function getSwarmEnvironment(): SwarmEnvironment {
       '/api/swarm-tmux-stop',
       '/api/swarm-tmux-scroll',
     ],
-    writableRoots: [
-      SWARM_CANONICAL_REPO,
-      SWARM_MEMORY_HANDOFFS,
-    ],
+    writableRoots: [SWARM_CANONICAL_REPO, SWARM_MEMORY_HANDOFFS],
     readOnlyRoots: [
       SWARM_MEMORY_ROOT,
       profilesRoot,
@@ -84,7 +87,11 @@ export function getSwarmEnvironment(): SwarmEnvironment {
   }
 }
 
-export function isForbiddenSwarmPath(pathValue: string | null | undefined): boolean {
+export function isForbiddenSwarmPath(
+  pathValue: string | null | undefined,
+): boolean {
   if (!pathValue) return false
-  return SWARM_FORBIDDEN_PATHS.some((root) => pathValue === root || pathValue.startsWith(`${root}/`))
+  return SWARM_FORBIDDEN_PATHS.some(
+    (root) => pathValue === root || pathValue.startsWith(`${root}/`),
+  )
 }

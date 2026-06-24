@@ -44,6 +44,8 @@ export type DashboardKanbanTask = {
   completed_at?: number | null
   workspace_kind?: string | null
   workspace_path?: string | null
+  tenant?: string | null
+  mission_id?: string | null
 }
 
 export type DashboardKanbanBoardResponse = {

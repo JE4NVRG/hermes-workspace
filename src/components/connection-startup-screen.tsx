@@ -4,11 +4,22 @@ import { writeTextToClipboard } from '@/lib/clipboard'
 import { fetchClaudeAuthStatus } from '@/lib/claude-auth'
 
 const POLL_INTERVAL_MS = 2_000
-const FAILURE_REVEAL_MS = 5_000
+// Remote/tunnelled Workspaces can take a few seconds to answer after a restart.
+// Do not show the scary manual setup/error panel before the secondary
+// connection-status probe had time to prove the backend is actually down.
+const FAILURE_REVEAL_MS = 12_000
 // Fire one silent auto-start attempt this many ms after we still can't connect.
-const AUTO_START_DELAY_MS = 4_000
+const AUTO_START_DELAY_MS = 8_000
 
 type Platform = 'macos' | 'windows' | 'linux' | 'unknown'
+
+type ConnectionStatusResponse = {
+  ok?: boolean
+  health?: boolean
+  chatReady?: boolean
+  modelConfigured?: boolean
+  status?: string
+}
 
 function detectPlatform(): Platform {
   if (typeof navigator === 'undefined') return 'unknown'
@@ -121,6 +132,30 @@ export function ConnectionStartupScreen({ onConnected }: Props) {
         // silent: manual auto-start button stays available
       }
     }
+
+    const getConnectionStatusFallback = async (): Promise<AuthStatus | null> => {
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 4_000)
+      try {
+        const res = await fetch('/api/connection-status', {
+          signal: controller.signal,
+        })
+        if (!res.ok) return null
+        const status = (await res.json()) as ConnectionStatusResponse
+        const isConnected =
+          status.ok ||
+          status.status === 'enhanced' ||
+          (status.chatReady && status.modelConfigured)
+        return isConnected
+          ? { authenticated: true, authRequired: false }
+          : null
+      } catch {
+        return null
+      } finally {
+        window.clearTimeout(timeout)
+      }
+    }
+
     autoStartTimer = setTimeout(() => {
       void fireSilentAutoStart()
     }, AUTO_START_DELAY_MS)
@@ -135,6 +170,15 @@ export function ConnectionStartupScreen({ onConnected }: Props) {
         if (pollTimer) clearTimeout(pollTimer)
         onConnectedRef.current(status)
       } catch {
+        const fallbackStatus = await getConnectionStatusFallback()
+        if (fallbackStatus && !isDone.current) {
+          isDone.current = true
+          clearTimeout(failureTimer)
+          if (autoStartTimer) clearTimeout(autoStartTimer)
+          if (pollTimer) clearTimeout(pollTimer)
+          onConnectedRef.current(fallbackStatus)
+          return
+        }
         if (isDone.current) return
         pollTimer = setTimeout(tryConnect, POLL_INTERVAL_MS)
       }

@@ -1,6 +1,72 @@
 import { createFileRoute } from '@tanstack/react-router'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { BEARER_TOKEN, CLAUDE_API } from '../../../server/gateway-capabilities'
 import { isAuthenticated } from '../../../server/auth-middleware'
+
+function hermesHome(): string {
+  return (
+    process.env.HERMES_HOME ??
+    process.env.CLAUDE_HOME ??
+    path.join(os.homedir(), '.hermes')
+  )
+}
+
+function parseDotenvValue(rawLine: string): [string, string] | null {
+  const line = rawLine.trim()
+  if (!line || line.startsWith('#') || !line.includes('=')) return null
+  const withoutExport = line.startsWith('export ') ? line.slice(7).trim() : line
+  const eq = withoutExport.indexOf('=')
+  if (eq <= 0) return null
+  const key = withoutExport.slice(0, eq).trim()
+  let value = withoutExport.slice(eq + 1).trim()
+  if (
+    (value.startsWith('\"') && value.endsWith('\"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1)
+  }
+  return [key, value]
+}
+
+function readDotenvValue(keys: string[]): string {
+  const candidates = [
+    path.join(process.cwd(), '.env'),
+    path.join(hermesHome(), '.env'),
+  ]
+  const seen = new Set<string>()
+  for (const file of candidates) {
+    if (seen.has(file)) continue
+    seen.add(file)
+    try {
+      const raw = fs.readFileSync(file, 'utf-8')
+      for (const line of raw.split(/\r?\n/)) {
+        const parsed = parseDotenvValue(line)
+        if (!parsed) continue
+        const [key, value] = parsed
+        if (keys.includes(key) && value) return value
+      }
+    } catch {
+      // Missing/unreadable .env is fine; process.env is preferred.
+    }
+  }
+  return ''
+}
+
+function gatewayBearerToken(): string {
+  return (
+    process.env.HERMES_API_TOKEN ||
+    process.env.CLAUDE_API_TOKEN ||
+    process.env.API_SERVER_KEY ||
+    readDotenvValue([
+      'HERMES_API_TOKEN',
+      'CLAUDE_API_TOKEN',
+      'API_SERVER_KEY',
+    ]) ||
+    BEARER_TOKEN
+  )
+}
 
 /**
  * Vanilla hermes-agent (any version through 2026-05) does not expose
@@ -28,8 +94,11 @@ async function fallbackAvailableModels(
       .map((m) => {
         const id = typeof m.id === 'string' ? m.id : ''
         if (!id) return null
-        const owned = typeof m.owned_by === 'string' ? m.owned_by.toLowerCase() : ''
-        const idProvider = id.includes('/') ? id.split('/')[0].toLowerCase() : owned
+        const owned =
+          typeof m.owned_by === 'string' ? m.owned_by.toLowerCase() : ''
+        const idProvider = id.includes('/')
+          ? id.split('/')[0].toLowerCase()
+          : owned
         if (wanted && idProvider !== wanted) return null
         return { id }
       })
@@ -56,8 +125,7 @@ async function proxyRequest(request: Request, splat: string) {
   headers.delete('host')
   headers.delete('content-length')
   // Read at request time — follows the same fix as PR #234.
-  const bearer =
-    process.env.HERMES_API_TOKEN || process.env.CLAUDE_API_TOKEN || BEARER_TOKEN
+  const bearer = gatewayBearerToken()
   if (bearer) headers.set('Authorization', `Bearer ${bearer}`)
 
   const init: RequestInit = {

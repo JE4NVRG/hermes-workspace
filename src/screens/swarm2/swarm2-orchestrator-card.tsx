@@ -159,7 +159,7 @@ export function Swarm2OrchestratorCard({
     <>
       <article
         className={cn(
-          'relative flex min-h-[23rem] flex-col rounded-[1.75rem] border border-[var(--theme-border)] border-l-4 border-l-[var(--theme-accent)] bg-[var(--theme-card)] px-5 pt-6 pb-4 shadow-[0_22px_64px_var(--theme-shadow)]',
+          'relative flex min-h-[21rem] flex-col rounded-[1.5rem] border border-[var(--theme-border)] bg-[var(--theme-card)] px-5 pt-5 pb-4 shadow-[0_16px_44px_var(--theme-shadow)]',
           className,
         )}
       >
@@ -259,7 +259,7 @@ export function Swarm2OrchestratorCard({
           </div>
         </div>
 
-        <div className="mt-6 min-h-[12.5rem] flex-1">
+        <div className="mt-4 min-h-[10rem] flex-1">
           <RouterChat
             members={members}
             roomIds={roomIds}
@@ -345,12 +345,12 @@ export function Swarm2OrchestratorCard({
             </div>
 
             {swarmCardMode === 'office' ? (
-              <div className="h-[360px] overflow-hidden rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card)]">
+              <div className="h-[320px] overflow-hidden rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card)]">
                 <OfficeView
                   agentRows={officeAgents}
                   missionRunning={activeAgents.some((agent) => agent.state === 'working' || agent.state === 'reviewing')}
                   onViewOutput={() => undefined}
-                  containerHeight={360}
+                  containerHeight={320}
                   hideHeader
                 />
               </div>

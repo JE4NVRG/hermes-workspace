@@ -11,6 +11,7 @@ import {
   Clock01Icon,
   ComputerTerminal01Icon,
   DashboardSquare01Icon,
+  Database01Icon,
   File01Icon,
   McpServerIcon,
   MessageMultiple01Icon,
@@ -64,6 +65,9 @@ import {
 } from '@/components/ui/menu'
 import { applyTheme, useSettingsStore } from '@/hooks/use-settings'
 
+const SIDEBAR_EXPANDED_WIDTH = 304
+const SIDEBAR_COLLAPSED_WIDTH = 72
+
 type WorkspaceStats = Record<string, unknown>
 
 function ThemeToggleMini() {
@@ -108,7 +112,7 @@ function ThemeToggleMini() {
         applyTheme(nextMode)
         updateSettings({ theme: nextMode })
       }}
-      className="shrink-0 rounded-lg p-1.5 transition-colors hover:opacity-80"
+      className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-primary-200 hover:opacity-90 dark:hover:bg-neutral-800"
       style={{ color: 'var(--theme-muted)' }}
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
     >
@@ -179,7 +183,7 @@ function NavItem({
 }) {
   const cls = cn(
     buttonVariants({ variant: 'ghost', size: 'sm' }),
-    'w-full h-auto min-h-11 gap-2.5 py-2 md:min-h-0',
+    'w-full h-auto min-h-11 gap-2.5 py-2 md:min-h-9',
     isCollapsed ? 'justify-center px-0' : 'justify-start px-3',
     item.active
       ? 'bg-accent-500/10 text-accent-500 hover:bg-accent-50 dark:hover:bg-accent-900/300/15'
@@ -584,6 +588,7 @@ function ChatSidebarComponent({
   const isJobsActive = pathname === '/jobs'
   const isMemoryActive = pathname === '/memory'
   const isTasksActive = pathname === '/tasks'
+  const isSupabaseActive = pathname === '/supabase'
   const isConductorActive = pathname === '/conductor'
   const isOperationsActive = pathname === '/operations'
   const isSwarmActive = pathname === '/swarm' || pathname === '/swarm2'
@@ -829,6 +834,13 @@ function ChatSidebarComponent({
     },
     {
       kind: 'link',
+      to: '/supabase',
+      icon: Database01Icon,
+      label: 'Supabase',
+      active: isSupabaseActive,
+    },
+    {
+      kind: 'link',
       to: '/conductor',
       icon: Rocket01Icon,
       label: 'Conductor',
@@ -843,7 +855,7 @@ function ChatSidebarComponent({
     },
     {
       kind: 'link',
-      to: '/swarm',
+      to: '/swarm2',
       icon: UserGroupIcon,
       label: 'Swarm',
       active: isSwarmActive,
@@ -906,12 +918,12 @@ function ChatSidebarComponent({
         width: isVisuallyCollapsed
           ? isMobile
             ? 0
-            : 48
+            : SIDEBAR_COLLAPSED_WIDTH
           : isMobile
             ? '85vw'
-            : 300,
+            : SIDEBAR_EXPANDED_WIDTH,
       }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
       className={cn(
         asideProps.className,
         isMobile && isCollapsed && 'pointer-events-none overflow-hidden',
@@ -933,7 +945,7 @@ function ChatSidebarComponent({
       <motion.div
         layout
         transition={{ layout: transition }}
-        className="relative flex h-12 items-center px-2"
+        className="relative flex h-[3.25rem] items-center px-2"
       >
         <AnimatePresence initial={false}>
           {!isVisuallyCollapsed ? (
@@ -976,7 +988,7 @@ function ChatSidebarComponent({
                   aria-label={
                     isVisuallyCollapsed ? 'Open Sidebar' : 'Close Sidebar'
                   }
-                  className="absolute right-2 top-1/2 shrink-0 -translate-y-1/2 opacity-80 hover:opacity-100"
+                  className="absolute right-2 top-1/2 size-9 shrink-0 -translate-y-1/2 opacity-85 hover:opacity-100"
                   data-tour="sidebar-collapse-toggle"
                 >
                   {isVisuallyCollapsed ? (
@@ -1180,7 +1192,7 @@ function ChatSidebarComponent({
             <MenuTrigger
               data-tour="settings"
               className={cn(
-                'flex items-center gap-2.5 rounded-lg py-1 transition-colors hover:bg-primary-200 dark:hover:bg-neutral-800 flex-1 min-w-0',
+                'flex min-h-9 items-center gap-2.5 rounded-lg py-1 transition-colors hover:bg-primary-200 dark:hover:bg-neutral-800 flex-1 min-w-0',
                 isVisuallyCollapsed ? 'justify-center px-0' : 'px-1.5',
               )}
             >
@@ -1231,7 +1243,7 @@ function ChatSidebarComponent({
               <button
                 type="button"
                 onClick={() => handleOpenSettings('claude')}
-                className="shrink-0 rounded-lg p-1.5 text-primary-400 hover:bg-primary-200 dark:hover:bg-neutral-800 hover:text-primary-600 dark:hover:text-neutral-300 transition-colors"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-primary-400 transition-colors hover:bg-primary-200 hover:text-primary-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                 aria-label="Settings"
               >
                 <HugeiconsIcon

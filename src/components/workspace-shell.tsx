@@ -50,8 +50,11 @@ const TerminalWorkspace = lazy(() =>
   })),
 )
 
+const DESKTOP_SIDEBAR_EXPANDED_WIDTH_PX = 304
+const DESKTOP_SIDEBAR_COLLAPSED_WIDTH_PX = 72
+
 export const DESKTOP_SIDEBAR_BACKDROP_CLASS =
-  'fixed left-0 bottom-0 top-[var(--titlebar-h,0px)] w-[300px] z-10 bg-black/10 backdrop-blur-[1px]'
+  'fixed left-0 bottom-0 top-[var(--titlebar-h,0px)] w-[304px] z-10 bg-black/10 backdrop-blur-[1px]'
 
 type WorkspaceShellProps = {
   children?: React.ReactNode
@@ -148,10 +151,15 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
         if (!res.ok || cancelled) return
         const data = (await res.json()) as {
           ok?: boolean
+          status?: string
           chatReady?: boolean
           modelConfigured?: boolean
         }
-        if (data?.ok || (data?.chatReady && data?.modelConfigured)) {
+        if (
+          data?.ok ||
+          data?.status === "enhanced" ||
+          (data?.chatReady && data?.modelConfigured)
+        ) {
           setAuthStatus({ authenticated: true, authRequired: false })
           setConnectionVerified(true)
         }
@@ -458,7 +466,13 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
       {!isChromeFreeSurface ? <MobileHamburgerMenu /> : null}
       {!isChromeFreeSurface ? <MobileTabBar /> : null}
       {!isChromeFreeSurface && !isMobile && !isOnChatRoute && settings.showSystemMetricsFooter ? (
-        <SystemMetricsFooter leftOffsetPx={sidebarCollapsed ? 48 : 300} />
+        <SystemMetricsFooter
+          leftOffsetPx={
+            sidebarCollapsed
+              ? DESKTOP_SIDEBAR_COLLAPSED_WIDTH_PX
+              : DESKTOP_SIDEBAR_EXPANDED_WIDTH_PX
+          }
+        />
       ) : null}
       {!isChromeFreeSurface ? <CommandPalette pathname={pathname} sessions={sessions} /> : null}
     </>

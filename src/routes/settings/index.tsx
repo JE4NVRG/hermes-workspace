@@ -922,7 +922,7 @@ function ChatDisplaySection() {
           description={
             chatSettings.sidebarHoverExpand
               ? 'Collapsed sidebar expands temporarily when you hover over it.'
-              : 'Collapsed sidebar stays at 48px. Click the toggle to open (default).'
+              : 'Collapsed sidebar stays at 72px. Click the toggle to open (default).'
           }
         >
           <Switch

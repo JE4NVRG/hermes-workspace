@@ -987,7 +987,15 @@ export function useStreamingMessage(options: UseStreamingMessageOptions = {}) {
         }
 
         const lifecyclePhase = lifecyclePhaseRef.current as StreamLifecyclePhase
-        if (!finishedRef.current && lifecyclePhase !== 'handoff') {
+// Route navigation from /chat/new -> /chat/:uuid marks the stream as
+        // "handoff" so the new screen can recover it. In portable mode the
+        // original fetch may still finish after that handoff; if we already
+        // received assistant text, finalize anyway so the persistent waiting
+        // key is cleared instead of leaving the UI stuck on "Thinking…".
+        if (
+          !finishedRef.current &&
+          (lifecyclePhase !== 'handoff' || fullTextRef.current.trim().length > 0)
+        ) {
           // If the stream ended cleanly (no 'done' event) but we never received
           // any response text, treat it as a failure rather than a successful
           // empty completion. This happens when a proxy (e.g., Tailscale Serve)

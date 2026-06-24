@@ -23,6 +23,15 @@ export function getRootSurfaceState(
     }
   }
 
+  if (onboardingComplete === null) {
+    return {
+      showLogin: false,
+      showOnboarding: false,
+      showWorkspaceShell: false,
+      showPostOnboardingOverlays: false,
+    }
+  }
+
   if (onboardingComplete !== true) {
     return {
       showLogin: false,

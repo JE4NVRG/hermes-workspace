@@ -57,7 +57,7 @@ const SWARM2_OPERATION_THEME: CSSProperties = {
 
 export const SWARM2_INFORMATION_HIERARCHY = [
   'Status header: online workers, active room, refresh state, view switch.',
-  'Orchestrator hub card: top-center primary routing hub with aggregate state and router affordance.',
+  'Aurora/orchestrator hub card: top-center primary routing hub with aggregate state and router affordance.',
   'Visible routing wires: subdued connection lines from the orchestrator to every worker, highlighted for selected and wired room nodes.',
   'Operations-style worker node cards: role, state, current task, last useful signal, direct inline chat/action affordances.',
   'Minimal attention rail: only auth, worker availability, room count, selected runtime metadata.',
@@ -112,6 +112,22 @@ export const SWARM2_REAL_API_ENDPOINTS = [
   '/api/terminal-input',
   '/api/terminal-resize',
   '/api/terminal-close',
+] as const
+
+const SWARM2_NON_WORKER_IDS = new Set(['workspace'])
+const SWARM2_LEGACY_ROSTER_ONLY_IDS = new Set(['swarm5', 'swarm6', 'swarm8'])
+const SWARM2_PROFILE_ORDER = [
+  'orchestrator',
+  'ops',
+  'auditor',
+  'exploit-dev',
+  'reviewer',
+  'report-writer',
+  'qa-copy',
+  'swarm12',
+  'shopee-ecommerce',
+  'x-social',
+  'linkedin-social',
 ] as const
 
 type TerminalKind = 'tmux' | 'log-tail' | 'shell' | 'none'
@@ -473,16 +489,37 @@ function rankMember(roomIds: Array<string>) {
   }
 }
 
+function isMemberInRoom(member: CrewMember, roomIds: Array<string>): boolean {
+  const normalizedId = member.id.toLowerCase()
+  return roomIds.some((id) => id.toLowerCase() === normalizedId)
+}
+
+function shouldShowSwarmMember(member: CrewMember, roomIds: Array<string>): boolean {
+  const normalizedId = member.id.toLowerCase()
+  if (SWARM2_NON_WORKER_IDS.has(normalizedId)) return false
+  if (member.profileFound || member.processAlive || isMemberInRoom(member, roomIds)) return true
+  return !SWARM2_LEGACY_ROSTER_ONLY_IDS.has(normalizedId)
+}
+
+function memberSortOrder(id: string): number {
+  const normalizedId = id.toLowerCase()
+  const explicit = SWARM2_PROFILE_ORDER.indexOf(normalizedId as (typeof SWARM2_PROFILE_ORDER)[number])
+  if (explicit >= 0) return explicit
+  const swarmMatch = normalizedId.match(/^swarm(\d+)$/)
+  if (swarmMatch) return 1_000 + Number(swarmMatch[1])
+  return 500
+}
+
 function sortSwarmMembers(members: Array<CrewMember>, roomIds: Array<string>) {
   const rank = rankMember(roomIds)
   return [...members]
-    .filter((member) => member.id && member.id.trim().length > 0)
+    .filter((member) => shouldShowSwarmMember(member, roomIds))
     .sort((a, b) => {
       const r = rank(a) - rank(b)
       if (r !== 0) return r
-      const numA = parseInt(a.id.replace(/\D/g, ''), 10) || 0
-      const numB = parseInt(b.id.replace(/\D/g, ''), 10) || 0
-      return numA - numB
+      const order = memberSortOrder(a.id) - memberSortOrder(b.id)
+      if (order !== 0) return order
+      return (a.displayName || a.id).localeCompare(b.displayName || b.id)
     })
 }
 
@@ -827,11 +864,7 @@ function ControlPlaneStage({
         <div className="relative w-full pt-3">
           <div className={cn('relative z-10', viewMode === 'cards' ? 'block' : 'hidden')}>
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 min-[1680px]:grid-cols-3">
-              {members.length === 0 ? (
-                <div className="col-span-full rounded-[1.5rem] border border-dashed border-[var(--theme-border)] bg-[var(--theme-card)] p-8 text-sm text-[var(--theme-muted)]">
-                  No swarm workers discovered from crew status yet.
-                </div>
-              ) : (
+              {members.length === 0 ? null : (
                 members.map((member) => {
                   const runtime = runtimeByWorker.get(member.id)
                   return (
@@ -1337,7 +1370,7 @@ export function Swarm2Screen() {
   }, [])
 
   const routeInboxItemToReviewer = useCallback((item: Swarm2InboxItem) => {
-    setSelectedId('swarm6')
+    setSelectedId('reviewer')
     setRouterSeed({
       key: Date.now(),
       mode: 'manual',

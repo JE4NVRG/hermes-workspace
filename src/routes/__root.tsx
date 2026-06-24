@@ -282,19 +282,29 @@ function RootLayout() {
     setMounted(true)
     initializeSettingsAppearance()
 
-    const syncOnboardingCompletion = () => {
+    const readStoredOnboardingCompletion = (): boolean | null => {
       try {
-        setOnboardingComplete(localStorage.getItem(ONBOARDING_KEY) === 'true')
+        const stored = localStorage.getItem(ONBOARDING_KEY)
+        return stored === 'true' ? true : stored === 'false' ? false : null
       } catch {
-        setOnboardingComplete(false)
+        return false
       }
+    }
+
+    const syncOnboardingCompletion = () => {
+      setOnboardingComplete(readStoredOnboardingCompletion() === true)
     }
 
     if (typeof window === 'undefined') {
       return undefined
     }
 
-    syncOnboardingCompletion()
+    const storedOnboarding = readStoredOnboardingCompletion()
+    if (storedOnboarding === true) {
+      setOnboardingComplete(true)
+    } else {
+      setOnboardingComplete(null)
+    }
 
     void fetch('/api/connection-status')
       .then((res) => (res.ok ? res.json() : null))
@@ -302,17 +312,30 @@ function RootLayout() {
         (
           status: {
             ok?: boolean
+            status?: string
             chatReady?: boolean
             modelConfigured?: boolean
           } | null,
         ) => {
-          if (status?.ok || (status?.chatReady && status?.modelConfigured)) {
+          if (
+            status?.ok ||
+            status?.status === 'enhanced' ||
+            (status?.chatReady && status?.modelConfigured)
+          ) {
             localStorage.setItem(ONBOARDING_KEY, 'true')
             syncOnboardingCompletion()
+            return
+          }
+          if (readStoredOnboardingCompletion() !== true) {
+            setOnboardingComplete(false)
           }
         },
       )
-      .catch(() => undefined)
+      .catch(() => {
+        if (readStoredOnboardingCompletion() !== true) {
+          setOnboardingComplete(false)
+        }
+      })
 
     const handleStorage = (event: StorageEvent) => {
       if (event.key && event.key !== ONBOARDING_KEY) return
@@ -385,7 +408,6 @@ function RootLayout() {
           {/* Keep UsageMeter mounted so search-modal OPEN_USAGE still works even when the pill is hidden by default. */}
           {!isGameSurfaceRoute ? <UsageMeter visible={settings.showUsageMeter} /> : null}
           {!isHermesWorldLandingRoute ? <KeyboardShortcutsModal /> : null}
-          {!isHermesWorldLandingRoute ? <UpdateCenterNotifier /> : null}
           {rootSurfaceState.showPostOnboardingOverlays && !isGameSurfaceRoute ? (
             <>
               <MobilePromptTrigger />

@@ -177,7 +177,6 @@ export function TasksScreen() {
   }
 
   const visibleColumns = showDone ? COLUMN_ORDER : COLUMN_ORDER.filter(c => c !== 'done')
-  const colMaxWidth = Math.floor(1200 / visibleColumns.length)
 
   return (
     <div className="min-h-full overflow-y-auto bg-surface text-ink">
@@ -257,7 +256,7 @@ export function TasksScreen() {
 
       {/* Board */}
       <div
-        className="mx-auto flex w-full max-w-[1200px] flex-1 gap-3 overflow-x-auto overflow-y-hidden p-4 min-h-0"
+        className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-3 overflow-y-visible p-4 min-h-0 md:flex-row md:overflow-x-auto md:overflow-y-hidden"
         style={{ boxShadow: 'inset 0 8px 24px rgba(0,0,0,0.2)' }}
       >
         {visibleColumns.map((col) => {
@@ -269,12 +268,11 @@ export function TasksScreen() {
             <div
               key={col}
               className={cn(
-                'flex flex-col rounded-xl border min-w-[180px] w-full shrink-0 flex-1',
+                'flex flex-col rounded-xl border w-full shrink-0 md:min-w-[180px] md:flex-1',
                 'bg-[var(--theme-card)] border-[var(--theme-border)]',
                 'transition-colors shadow-[0_2px_12px_rgba(0,0,0,0.25)]',
                 isDragOver && 'border-[var(--theme-accent)] bg-[var(--theme-hover)]',
               )}
-              style={{ maxWidth: colMaxWidth }}
               onDragOver={e => handleDragOver(e, col)}
               onDrop={e => handleDrop(e, col)}
               onDragLeave={() => setDragOverColumn(null)}

@@ -15,6 +15,7 @@ import { Route as TerminalRouteImport } from './routes/terminal'
 import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as Swarm2RouteImport } from './routes/swarm2'
 import { Route as SwarmRouteImport } from './routes/swarm'
+import { Route as SupabaseRouteImport } from './routes/supabase'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReserveRouteImport } from './routes/reserve'
@@ -65,6 +66,7 @@ import { Route as ApiSwarmDirectChatRouteImport } from './routes/api/swarm-direc
 import { Route as ApiSwarmDecomposeRouteImport } from './routes/api/swarm-decompose'
 import { Route as ApiSwarmCheckpointRouteImport } from './routes/api/swarm-checkpoint'
 import { Route as ApiSwarmChatRouteImport } from './routes/api/swarm-chat'
+import { Route as ApiSupabaseRegistryRouteImport } from './routes/api/supabase-registry'
 import { Route as ApiStartClaudeRouteImport } from './routes/api/start-claude'
 import { Route as ApiStartAgentRouteImport } from './routes/api/start-agent'
 import { Route as ApiSkillsRouteImport } from './routes/api/skills'
@@ -112,6 +114,7 @@ import { Route as ApiAuthCheckRouteImport } from './routes/api/auth-check'
 import { Route as ApiAuthRouteImport } from './routes/api/auth'
 import { Route as ApiArtifactsRouteImport } from './routes/api/artifacts'
 import { Route as ApiAgentBusRouteImport } from './routes/api/agent-bus'
+import { Route as ApiWebhooksGithubRouteImport } from './routes/api/webhooks/github'
 import { Route as ApiUpdateWorkspaceRouteImport } from './routes/api/update/workspace'
 import { Route as ApiUpdateStatusRouteImport } from './routes/api/update/status'
 import { Route as ApiUpdateAgentRouteImport } from './routes/api/update/agent'
@@ -198,6 +201,11 @@ const Swarm2Route = Swarm2RouteImport.update({
 const SwarmRoute = SwarmRouteImport.update({
   id: '/swarm',
   path: '/swarm',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SupabaseRoute = SupabaseRouteImport.update({
+  id: '/supabase',
+  path: '/supabase',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkillsRoute = SkillsRouteImport.update({
@@ -451,6 +459,11 @@ const ApiSwarmChatRoute = ApiSwarmChatRouteImport.update({
   path: '/api/swarm-chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSupabaseRegistryRoute = ApiSupabaseRegistryRouteImport.update({
+  id: '/api/supabase-registry',
+  path: '/api/supabase-registry',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiStartClaudeRoute = ApiStartClaudeRouteImport.update({
   id: '/api/start-claude',
   path: '/api/start-claude',
@@ -684,6 +697,11 @@ const ApiArtifactsRoute = ApiArtifactsRouteImport.update({
 const ApiAgentBusRoute = ApiAgentBusRouteImport.update({
   id: '/api/agent-bus',
   path: '/api/agent-bus',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWebhooksGithubRoute = ApiWebhooksGithubRouteImport.update({
+  id: '/api/webhooks/github',
+  path: '/api/webhooks/github',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUpdateWorkspaceRoute = ApiUpdateWorkspaceRouteImport.update({
@@ -998,6 +1016,7 @@ export interface FileRoutesByFullPath {
   '/reserve': typeof ReserveRouteWithChildren
   '/settings': typeof SettingsRouteWithChildren
   '/skills': typeof SkillsRoute
+  '/supabase': typeof SupabaseRoute
   '/swarm': typeof SwarmRoute
   '/swarm2': typeof Swarm2Route
   '/tasks': typeof TasksRoute
@@ -1051,6 +1070,7 @@ export interface FileRoutesByFullPath {
   '/api/skills': typeof ApiSkillsRouteWithChildren
   '/api/start-agent': typeof ApiStartAgentRoute
   '/api/start-claude': typeof ApiStartClaudeRoute
+  '/api/supabase-registry': typeof ApiSupabaseRegistryRoute
   '/api/swarm-chat': typeof ApiSwarmChatRoute
   '/api/swarm-checkpoint': typeof ApiSwarmCheckpointRoute
   '/api/swarm-decompose': typeof ApiSwarmDecomposeRoute
@@ -1134,6 +1154,7 @@ export interface FileRoutesByFullPath {
   '/api/update/agent': typeof ApiUpdateAgentRoute
   '/api/update/status': typeof ApiUpdateStatusRoute
   '/api/update/workspace': typeof ApiUpdateWorkspaceRoute
+  '/api/webhooks/github': typeof ApiWebhooksGithubRoute
   '/api/hermesworld/reservations/confirm': typeof ApiHermesworldReservationsConfirmRoute
   '/api/mcp/$name/logs': typeof ApiMcpNameLogsRoute
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
@@ -1159,6 +1180,7 @@ export interface FileRoutesByTo {
   '/profiles': typeof ProfilesRoute
   '/reserve': typeof ReserveRouteWithChildren
   '/skills': typeof SkillsRoute
+  '/supabase': typeof SupabaseRoute
   '/swarm': typeof SwarmRoute
   '/swarm2': typeof Swarm2Route
   '/tasks': typeof TasksRoute
@@ -1212,6 +1234,7 @@ export interface FileRoutesByTo {
   '/api/skills': typeof ApiSkillsRouteWithChildren
   '/api/start-agent': typeof ApiStartAgentRoute
   '/api/start-claude': typeof ApiStartClaudeRoute
+  '/api/supabase-registry': typeof ApiSupabaseRegistryRoute
   '/api/swarm-chat': typeof ApiSwarmChatRoute
   '/api/swarm-checkpoint': typeof ApiSwarmCheckpointRoute
   '/api/swarm-decompose': typeof ApiSwarmDecomposeRoute
@@ -1295,6 +1318,7 @@ export interface FileRoutesByTo {
   '/api/update/agent': typeof ApiUpdateAgentRoute
   '/api/update/status': typeof ApiUpdateStatusRoute
   '/api/update/workspace': typeof ApiUpdateWorkspaceRoute
+  '/api/webhooks/github': typeof ApiWebhooksGithubRoute
   '/api/hermesworld/reservations/confirm': typeof ApiHermesworldReservationsConfirmRoute
   '/api/mcp/$name/logs': typeof ApiMcpNameLogsRoute
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
@@ -1322,6 +1346,7 @@ export interface FileRoutesById {
   '/reserve': typeof ReserveRouteWithChildren
   '/settings': typeof SettingsRouteWithChildren
   '/skills': typeof SkillsRoute
+  '/supabase': typeof SupabaseRoute
   '/swarm': typeof SwarmRoute
   '/swarm2': typeof Swarm2Route
   '/tasks': typeof TasksRoute
@@ -1375,6 +1400,7 @@ export interface FileRoutesById {
   '/api/skills': typeof ApiSkillsRouteWithChildren
   '/api/start-agent': typeof ApiStartAgentRoute
   '/api/start-claude': typeof ApiStartClaudeRoute
+  '/api/supabase-registry': typeof ApiSupabaseRegistryRoute
   '/api/swarm-chat': typeof ApiSwarmChatRoute
   '/api/swarm-checkpoint': typeof ApiSwarmCheckpointRoute
   '/api/swarm-decompose': typeof ApiSwarmDecomposeRoute
@@ -1458,6 +1484,7 @@ export interface FileRoutesById {
   '/api/update/agent': typeof ApiUpdateAgentRoute
   '/api/update/status': typeof ApiUpdateStatusRoute
   '/api/update/workspace': typeof ApiUpdateWorkspaceRoute
+  '/api/webhooks/github': typeof ApiWebhooksGithubRoute
   '/api/hermesworld/reservations/confirm': typeof ApiHermesworldReservationsConfirmRoute
   '/api/mcp/$name/logs': typeof ApiMcpNameLogsRoute
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
@@ -1486,6 +1513,7 @@ export interface FileRouteTypes {
     | '/reserve'
     | '/settings'
     | '/skills'
+    | '/supabase'
     | '/swarm'
     | '/swarm2'
     | '/tasks'
@@ -1539,6 +1567,7 @@ export interface FileRouteTypes {
     | '/api/skills'
     | '/api/start-agent'
     | '/api/start-claude'
+    | '/api/supabase-registry'
     | '/api/swarm-chat'
     | '/api/swarm-checkpoint'
     | '/api/swarm-decompose'
@@ -1622,6 +1651,7 @@ export interface FileRouteTypes {
     | '/api/update/agent'
     | '/api/update/status'
     | '/api/update/workspace'
+    | '/api/webhooks/github'
     | '/api/hermesworld/reservations/confirm'
     | '/api/mcp/$name/logs'
     | '/api/mcp/hub-sources/$id'
@@ -1647,6 +1677,7 @@ export interface FileRouteTypes {
     | '/profiles'
     | '/reserve'
     | '/skills'
+    | '/supabase'
     | '/swarm'
     | '/swarm2'
     | '/tasks'
@@ -1700,6 +1731,7 @@ export interface FileRouteTypes {
     | '/api/skills'
     | '/api/start-agent'
     | '/api/start-claude'
+    | '/api/supabase-registry'
     | '/api/swarm-chat'
     | '/api/swarm-checkpoint'
     | '/api/swarm-decompose'
@@ -1783,6 +1815,7 @@ export interface FileRouteTypes {
     | '/api/update/agent'
     | '/api/update/status'
     | '/api/update/workspace'
+    | '/api/webhooks/github'
     | '/api/hermesworld/reservations/confirm'
     | '/api/mcp/$name/logs'
     | '/api/mcp/hub-sources/$id'
@@ -1809,6 +1842,7 @@ export interface FileRouteTypes {
     | '/reserve'
     | '/settings'
     | '/skills'
+    | '/supabase'
     | '/swarm'
     | '/swarm2'
     | '/tasks'
@@ -1862,6 +1896,7 @@ export interface FileRouteTypes {
     | '/api/skills'
     | '/api/start-agent'
     | '/api/start-claude'
+    | '/api/supabase-registry'
     | '/api/swarm-chat'
     | '/api/swarm-checkpoint'
     | '/api/swarm-decompose'
@@ -1945,6 +1980,7 @@ export interface FileRouteTypes {
     | '/api/update/agent'
     | '/api/update/status'
     | '/api/update/workspace'
+    | '/api/webhooks/github'
     | '/api/hermesworld/reservations/confirm'
     | '/api/mcp/$name/logs'
     | '/api/mcp/hub-sources/$id'
@@ -1972,6 +2008,7 @@ export interface RootRouteChildren {
   ReserveRoute: typeof ReserveRouteWithChildren
   SettingsRoute: typeof SettingsRouteWithChildren
   SkillsRoute: typeof SkillsRoute
+  SupabaseRoute: typeof SupabaseRoute
   SwarmRoute: typeof SwarmRoute
   Swarm2Route: typeof Swarm2Route
   TasksRoute: typeof TasksRoute
@@ -2025,6 +2062,7 @@ export interface RootRouteChildren {
   ApiSkillsRoute: typeof ApiSkillsRouteWithChildren
   ApiStartAgentRoute: typeof ApiStartAgentRoute
   ApiStartClaudeRoute: typeof ApiStartClaudeRoute
+  ApiSupabaseRegistryRoute: typeof ApiSupabaseRegistryRoute
   ApiSwarmChatRoute: typeof ApiSwarmChatRoute
   ApiSwarmCheckpointRoute: typeof ApiSwarmCheckpointRoute
   ApiSwarmDecomposeRoute: typeof ApiSwarmDecomposeRoute
@@ -2082,6 +2120,7 @@ export interface RootRouteChildren {
   ApiUpdateAgentRoute: typeof ApiUpdateAgentRoute
   ApiUpdateStatusRoute: typeof ApiUpdateStatusRoute
   ApiUpdateWorkspaceRoute: typeof ApiUpdateWorkspaceRoute
+  ApiWebhooksGithubRoute: typeof ApiWebhooksGithubRoute
   ApiRunsSessionKeyRunIdAbandonRoute: typeof ApiRunsSessionKeyRunIdAbandonRoute
 }
 
@@ -2127,6 +2166,13 @@ declare module '@tanstack/react-router' {
       path: '/swarm'
       fullPath: '/swarm'
       preLoaderRoute: typeof SwarmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/supabase': {
+      id: '/supabase'
+      path: '/supabase'
+      fullPath: '/supabase'
+      preLoaderRoute: typeof SupabaseRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/skills': {
@@ -2479,6 +2525,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSwarmChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/supabase-registry': {
+      id: '/api/supabase-registry'
+      path: '/api/supabase-registry'
+      fullPath: '/api/supabase-registry'
+      preLoaderRoute: typeof ApiSupabaseRegistryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/start-claude': {
       id: '/api/start-claude'
       path: '/api/start-claude'
@@ -2806,6 +2859,13 @@ declare module '@tanstack/react-router' {
       path: '/api/agent-bus'
       fullPath: '/api/agent-bus'
       preLoaderRoute: typeof ApiAgentBusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/webhooks/github': {
+      id: '/api/webhooks/github'
+      path: '/api/webhooks/github'
+      fullPath: '/api/webhooks/github'
+      preLoaderRoute: typeof ApiWebhooksGithubRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/update/workspace': {
@@ -3441,6 +3501,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReserveRoute: ReserveRouteWithChildren,
   SettingsRoute: SettingsRouteWithChildren,
   SkillsRoute: SkillsRoute,
+  SupabaseRoute: SupabaseRoute,
   SwarmRoute: SwarmRoute,
   Swarm2Route: Swarm2Route,
   TasksRoute: TasksRoute,
@@ -3494,6 +3555,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSkillsRoute: ApiSkillsRouteWithChildren,
   ApiStartAgentRoute: ApiStartAgentRoute,
   ApiStartClaudeRoute: ApiStartClaudeRoute,
+  ApiSupabaseRegistryRoute: ApiSupabaseRegistryRoute,
   ApiSwarmChatRoute: ApiSwarmChatRoute,
   ApiSwarmCheckpointRoute: ApiSwarmCheckpointRoute,
   ApiSwarmDecomposeRoute: ApiSwarmDecomposeRoute,
@@ -3551,6 +3613,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUpdateAgentRoute: ApiUpdateAgentRoute,
   ApiUpdateStatusRoute: ApiUpdateStatusRoute,
   ApiUpdateWorkspaceRoute: ApiUpdateWorkspaceRoute,
+  ApiWebhooksGithubRoute: ApiWebhooksGithubRoute,
   ApiRunsSessionKeyRunIdAbandonRoute: ApiRunsSessionKeyRunIdAbandonRoute,
 }
 export const routeTree = rootRouteImport

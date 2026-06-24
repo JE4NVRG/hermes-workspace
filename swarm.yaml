@@ -1,498 +1,350 @@
 version: 1
 workers:
-- id: orchestrator
-  name: Orchestrator
-  role: Swarm Orchestrator / Greenlight Gate
-  specialty: mission routing, task decomposition, handoffs, proof contracts, human approval gates
-  model: GPT-5.5
-  mission: Decompose missions into safe, proof-bearing work and route to the right specialist while preserving human greenlight control.
-  profile: orchestrator
-  modes:
-  - plan
-  tools:
-  - todo
-  - kanban
-  - delegation
-  - terminal
-  - file
-  - gbrain
-  - session_search
-  - cronjob
-  - skills
-  - clarify
-  - web
-  skills:
-  - orchestrator-core
-  - gstack-for-hermes
-  - gbrain
-  - kanban-orchestrator
-  - subagent-driven-development
-  - writing-plans
-  - requesting-code-review
-  - workspace-dispatch
-  capabilities:
-  - orchestration
-  - decomposition
-  - routing
-  - proof-contracts
-  - greenlight-gate
-  preferredTaskTypes:
-  - orchestration
-  - planning
-  - routing
-  - coordination
-  - handoff
-  greenlightRequiredFor:
-  - merge
-  - publish
-  - destructive
-  - external-send
-  - credential-change
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: orchestrator:plan
-- id: km-agent
-  name: KM Agent
-  role: RAZSOC / GBrain Knowledge Steward
-  specialty: RAZSOC, GBrain, Obsidian, TaskNotes, graph health, durable knowledge capture, drift audits
-  model: GPT-5.5
-  mission: Keep the operating brain coherent, searchable, and source-of-record aligned without polluting durable knowledge.
-  profile: km-agent
-  modes:
-  - health
-  - curate
-  tools:
-  - gbrain
-  - file
-  - terminal
-  - session_search
-  - skills
-  - todo
-  - cronjob
-  - web
-  skills:
-  - km-agent-core
-  - gbrain
-  - obsidian-markdown
-  - obsidian-cli
-  - obsidian-bases
-  - json-canvas
-  - gstack-for-hermes
-  capabilities:
-  - gbrain
-  - razsoc
-  - obsidian
-  - tasknotes
-  - drift-audit
-  - knowledge-curation
-  preferredTaskTypes:
-  - knowledge
-  - curation
-  - brain-health
-  - drift
-  - documentation
-  greenlightRequiredFor:
-  - delete
-  - purge
-  - bulk-edit
-  - source-of-record-change
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: km:health
-- id: builder
-  name: Builder
-  role: Scoped Implementation Agent
-  specialty: focused implementation, tests, small diffs, integration fixes
-  model: GPT-5.5
-  mission: Ship scoped product/code slices with tests, minimal diffs, and clear verification evidence.
-  profile: builder
-  modes:
-  - task
-  tools:
-  - terminal
-  - file
-  - browser
-  - web
-  - gbrain
-  - session_search
-  - skills
-  - todo
-  skills:
-  - builder-core
-  - gstack-for-hermes
-  - test-driven-development
-  - systematic-debugging
-  - github-pr-workflow
-  - requesting-code-review
-  - codebase-inspection
-  capabilities:
-  - implementation
-  - code-editing
-  - tests
-  - integration
-  - build-verification
-  preferredTaskTypes:
-  - implementation
-  - bugfix
-  - feature
-  - refactor
-  - integration
-  greenlightRequiredFor:
-  - merge
-  - push
-  - destructive
-  - external-write
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: builder:task
-- id: reviewer
-  name: Reviewer
-  role: Independent Review / Merge Gate
-  specialty: security review, logic review, regression detection, quality gates
-  model: GPT-5.5
-  mission: Independently review changes and block unsafe, untested, or logically broken work before it lands.
-  profile: reviewer
-  modes:
-  - gate
-  tools:
-  - terminal
-  - file
-  - web
-  - gbrain
-  - session_search
-  - skills
-  skills:
-  - reviewer-core
-  - requesting-code-review
-  - github-code-review
-  - systematic-debugging
-  - gstack-for-hermes
-  - gbrain
-  - codebase-inspection
-  capabilities:
-  - code-review
-  - security-review
-  - regression-analysis
-  - quality-gate
-  - merge-readiness
-  preferredTaskTypes:
-  - review
-  - qa
-  - regression
-  - verification
-  - merge-gate
-  greenlightRequiredFor:
-  - approve-merge
-  - external-comment
-  - destructive
-  reviewRequired: false
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: reviewer:gate
-- id: qa
-  name: QA
-  role: Browser / Workflow / CLI Smoke Verification
-  specialty: browser QA, workflow smoke tests, expected-vs-actual checks, regression reproduction
-  model: GPT-5.5
-  mission: Verify user-visible behavior with concrete smoke evidence and concise bug reports.
-  profile: qa
-  modes:
-  - smoke
-  tools:
-  - browser
-  - terminal
-  - file
-  - vision
-  - gbrain
-  - session_search
-  - skills
-  - web
-  skills:
-  - qa-core
-  - browser-harness-power-use
-  - dogfood
-  - gstack-for-hermes
-  capabilities:
-  - browser-qa
-  - smoke-verification
-  - regression-reproduction
-  - cli-verification
-  - evidence-capture
-  preferredTaskTypes:
-  - qa
-  - smoke
-  - browser
-  - verification
-  - regression
-  greenlightRequiredFor:
-  - destructive
-  - external-write
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: qa:smoke
-- id: researcher
-  name: Researcher
-  role: Brain-first Research / Bounded Autoresearch
-  specialty: GBrain-first lookup, external research, synthesis, source trails, bounded research loops
-  model: GPT-5.5
-  mission: Produce decision-grade research with brain-first context, external verification, and explicit uncertainty.
-  profile: researcher
-  modes:
-  - quick
-  - autoresearch
-  tools:
-  - gbrain
-  - web
-  - browser
-  - terminal
-  - file
-  - vision
-  - session_search
-  - skills
-  - todo
-  skills:
-  - researcher-core
-  - gbrain
-  - autoresearch
-  - browser-harness-power-use
-  - gstack-for-hermes
-  - researcher-quick
-  - researcher-autoresearch
-  - arxiv
-  - youtube-content
-  - polymarket
-  capabilities:
-  - research
-  - synthesis
-  - source-verification
-  - gbrain-query
-  - autoresearch
-  preferredTaskTypes:
-  - research
-  - analysis
-  - options
-  - source-review
-  - market-map
-  greenlightRequiredFor:
-  - publish
-  - external-send
-  - long-running-loop
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: researcher:quick
-- id: ops-watch
-  name: Ops Watch
-  role: Local Infra / Runtime Health Watch
-  specialty: gateway health, cron, MCP, workspace services, local process status, boring reliability
-  model: GPT-5.5
-  mission: Keep Hermes, Workspace, GBrain, gateway, cron, and local services observable and healthy with quiet, low-risk checks.
-  profile: ops-watch
-  modes:
-  - health
-  tools:
-  - terminal
-  - cronjob
-  - file
-  - gbrain
-  - skills
-  - session_search
-  - web
-  skills:
-  - ops-watch-core
-  - gbrain
-  - hermes-agent
-  - systematic-debugging
-  - webhook-subscriptions
-  capabilities:
-  - ops-health
-  - gateway-status
-  - runtime-monitoring
-  - cron
-  - mcp-health
-  - lifecycle-sweep
-  preferredTaskTypes:
-  - ops
-  - health
-  - monitoring
-  - lifecycle
-  - incident-triage
-  greenlightRequiredFor:
-  - restart-service
-  - destructive
-  - config-change
-  - credential-change
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: ops:health
-- id: maintainer
-  name: Maintainer
-  role: Upstream Dependency / Patch Hygiene
-  specialty: upstream tracking, local patch hygiene, dependency updates, PR/issue follow-through
-  model: GPT-5.5
-  mission: Keep local forks and upstream dependencies healthy without losing local patches or dirty-worktree context.
-  profile: maintainer
-  modes:
-  - check
-  tools:
-  - terminal
-  - file
-  - web
-  - browser
-  - gbrain
-  - session_search
-  - skills
-  skills:
-  - maintainer-core
-  - github-repo-management
-  - github-pr-workflow
-  - github-issues
-  - github-code-review
-  - gbrain
-  - gstack-for-hermes
-  - hermes-agent
-  capabilities:
-  - upstream-tracking
-  - dependency-maintenance
-  - patch-hygiene
-  - git-review
-  - issue-tracking
-  preferredTaskTypes:
-  - maintenance
-  - upstream
-  - dependency
-  - patch
-  - release-notes
-  greenlightRequiredFor:
-  - merge
-  - push
-  - destructive
-  - fork-reset
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: maintainer:check
-- id: strategist
-  name: Strategist
-  role: Wedges / Bets / Kill Criteria
-  specialty: operating plans, gstack-style wedges, strategy reviews, decision framing, kill criteria
-  model: GPT-5.5
-  mission: Turn ambiguity into crisp wedges, bets, constraints, and kill criteria without over-planning.
-  profile: strategist
-  modes:
-  - review
-  tools:
-  - gbrain
-  - web
-  - session_search
-  - file
-  - skills
-  - todo
-  - clarify
-  skills:
-  - strategist-core
-  - gstack-for-hermes
-  - gbrain
-  - writing-plans
-  - polymarket
-  capabilities:
-  - strategy
-  - planning
-  - ideation
-  - decision-framing
-  - kill-criteria
-  preferredTaskTypes:
-  - strategy
-  - planning
-  - review
-  - ideation
-  - prioritization
-  greenlightRequiredFor:
-  - publish
-  - external-send
-  - irreversible-decision
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: strategist:review
-- id: inbox-triage
-  name: Inbox Triage
-  role: Capture / Discard / Route / Task Triage
-  specialty: low-friction inbox processing, capture routing, task/research/defer decisions, durable-context filtering
-  model: GPT-5.5
-  mission: Route incoming material into discard, task, research, or durable brain capture with minimal overhead and no junk accumulation.
-  profile: inbox-triage
-  modes:
-  - triage
-  tools:
-  - gbrain
-  - web
-  - file
-  - session_search
-  - todo
-  - skills
-  - terminal
-  skills:
-  - inbox-triage-core
-  - gbrain
-  - obsidian-markdown
-  - gstack-for-hermes
-  - defuddle
-  - youtube-content
-  capabilities:
-  - inbox-triage
-  - capture-routing
-  - task-routing
-  - knowledge-filtering
-  - source-review
-  preferredTaskTypes:
-  - triage
-  - inbox
-  - capture
-  - task-routing
-  - reading-queue
-  greenlightRequiredFor:
-  - delete
-  - purge
-  - publish
-  - external-send
-  maxConcurrentTasks: 1
-  acceptsBroadcast: true
-  plugins: []
-  pluginToolsets: []
-  mcpServers:
-  - gbrain
-  wrapper: inbox:triage
+  - id: orchestrator
+    name: JE4NDEV Orchestrator
+    role: Audit Swarm Orchestrator / Kanban Maestro
+    specialty: task decomposition, dependency graphing, audit pipeline control, human approval gates
+    model: GPT-5.5
+    mission: Turn Jean's audit or operations goal into a durable Kanban mission with clear handoffs, acceptance criteria, reviewer gates, and no unapproved spend/execution.
+    skills:
+      - kanban-orchestrator
+      - smart-contract-audit
+      - audit-independent-review
+    capabilities:
+      - audit-planning
+      - task-decomposition
+      - dependency-management
+      - kanban-routing
+      - approval-gates
+      - impact-prioritization
+    preferredTaskTypes:
+      - orchestration
+      - planning
+      - audit-pipeline
+      - triage
+      - handoff
+    maxConcurrentTasks: 1
+    acceptsBroadcast: true
+    reviewRequired: false
+
+  - id: auditor
+    name: JE4NDEV Auditor
+    role: Solidity/EVM Architecture & Vulnerability Researcher
+    specialty: full-contract reading, state transitions, invariants, asset flows, trust assumptions, exploitable vulnerability paths
+    model: GPT-5.5
+    mission: Find real exploitable Solidity/EVM bugs only. No theory-only findings; every candidate must include an executable path, attacker prerequisites, affected assets, and PoC requirements.
+    skills:
+      - smart-contract-audit
+      - audit-independent-review
+      - audit-finding-validation
+      - governance-audit-patterns
+      - stableswap-curve-audit
+    capabilities:
+      - solidity-review
+      - evm-security
+      - invariant-analysis
+      - attack-path-tracing
+      - protocol-accounting
+      - impact-quantification
+    preferredTaskTypes:
+      - audit
+      - recon
+      - architecture-map
+      - invariant-review
+      - candidate-finding
+    maxConcurrentTasks: 1
+    acceptsBroadcast: true
+    reviewRequired: true
+
+  - id: exploit-dev
+    name: JE4NDEV Exploit Dev
+    role: Foundry/Echidna PoC Engineer
+    specialty: minimal reproducible exploits, fork tests, invariant tests, balance deltas, attacker profit proof
+    model: GPT-5.5
+    mission: Convert only plausible candidate findings into passing PoCs. If exploitability is not proven, return NOT PROVEN instead of forcing a bug.
+    skills:
+      - smart-contract-audit
+      - audit-finding-validation
+      - defi-research-automation
+    capabilities:
+      - foundry-poc
+      - echidna-invariants
+      - mainnet-fork-tests
+      - mock-contracts
+      - exploit-profit-accounting
+      - reproducibility
+    preferredTaskTypes:
+      - poc
+      - exploit
+      - foundry-test
+      - invariant-test
+      - validation
+    maxConcurrentTasks: 1
+    acceptsBroadcast: true
+    reviewRequired: true
+
+  - id: reviewer
+    name: JE4NDEV Reviewer
+    role: False-Positive Killer / Bounty Acceptance Gate
+    specialty: exploitability review, platform acceptance, severity sanity, duplicate/known-issue filtering, mitigation checks
+    model: GPT-5.5
+    mission: Try to kill every finding before Jean submits it. Approve only if attacker reachability, financial impact, PoC proof, and platform acceptance all survive review.
+    skills:
+      - audit-finding-validation
+      - audit-independent-review
+      - smart-contract-audit
+      - reserve-protocol-audit-2026
+    capabilities:
+      - false-positive-review
+      - bounty-acceptance-gate
+      - severity-check
+      - duplicate-filtering
+      - mitigation-review
+      - report-blockers
+    preferredTaskTypes:
+      - review
+      - validation
+      - false-positive-check
+      - severity-review
+      - submission-gate
+    maxConcurrentTasks: 1
+    acceptsBroadcast: true
+    reviewRequired: false
+
+  - id: report-writer
+    name: JE4NDEV Report Writer
+    role: Cantina/Sherlock/CodeHawks Finding Writer
+    specialty: clean professional markdown, impact proof, PoC explanation, mitigation, platform-specific submission formatting
+    model: GPT-5.5
+    mission: Write concise English findings only after PoC/reviewer approval. Never invent impact; never paste raw code dumps without explanation; preserve clean markdown for bounty platforms.
+    skills:
+      - smart-contract-audit
+      - audit-finding-validation
+      - reserve-protocol-audit-2026
+    capabilities:
+      - audit-report-writing
+      - markdown-formatting
+      - impact-writing
+      - poc-explanation
+      - mitigation-writing
+      - cantina-sherlock-codehawks-format
+    preferredTaskTypes:
+      - report
+      - writeup
+      - submission
+      - markdown-cleanup
+      - finding-finalization
+    maxConcurrentTasks: 1
+    acceptsBroadcast: true
+    reviewRequired: true
+
+  - id: ops
+    name: JE4NDEV Ops
+    role: Hermes/Workspace/VPS/Automation Operator
+    specialty: Hermes services, Workspace/Dashboard/Kanban, WSL/Windows bridge, VPS ops, backups, smoke tests, safe rollback
+    model: GPT-5.5
+    mission: Keep Jean's local Hermes/Workspace/agent cockpit stable and observable. Never expose secrets, preserve critical ports, back up before edits, and verify every operational change.
+    skills:
+      - hermes-agent
+      - hermes-agent-operations
+      - web-infrastructure-ops
+      - openclaw-mission-control-ops
+      - wsl-project-workspace
+    capabilities:
+      - hermes-ops
+      - workspace-ops
+      - dashboard-plugins
+      - systemd-user-services
+      - backup-restore
+      - smoke-tests
+      - safe-rollback
+    preferredTaskTypes:
+      - ops
+      - config
+      - service-health
+      - dashboard
+      - backup
+      - integration
+    maxConcurrentTasks: 1
+    acceptsBroadcast: true
+    reviewRequired: true
+
+  # Legacy/general Workspace roster kept available but not the JE4NDEV audit primary lane.
+  - id: swarm12
+    name: Triage
+    role: PR / Issues Primary
+    specialty: GitHub triage, issue reproduction, PR review prep, focused fixes
+    model: GPT-5.5
+    mission: Turn repo issues and review feedback into reproductions, plans, and tested PRs when explicitly assigned.
+    skills:
+      - swarm-pr-worker
+      - swarm-worker-core
+    capabilities:
+      - github-triage
+      - issue-reproduction
+      - pr-patching
+      - review-feedback
+      - gh-cli
+    preferredTaskTypes:
+      - pr
+      - issue
+      - bugfix
+      - github
+      - triage
+    maxConcurrentTasks: 1
+    acceptsBroadcast: false
+
+  - id: swarm6
+    name: Reviewer
+    role: Reviewer / Merge Gate
+    specialty: code review, regression detection, test coverage, merge readiness
+    model: Opus 4.7
+    mission: Catch breakage before it reaches production. Use only when explicitly assigned.
+    skills:
+      - swarm-pr-worker
+      - swarm-worker-core
+    capabilities:
+      - code-review
+      - regression-analysis
+      - test-planning
+      - quality-gate
+      - merge-readiness
+    preferredTaskTypes:
+      - review
+      - qa
+      - regression
+      - verification
+      - merge-gate
+    reviewRequired: false
+    maxConcurrentTasks: 1
+    acceptsBroadcast: false
+
+  - id: swarm5
+    name: Builder
+    role: Primary Builder
+    specialty: full-stack implementation across Hermes Workspace and Swarm2
+    model: GPT-5.5
+    mission: Ship focused product slices with tests and clean diffs when explicitly assigned.
+    skills:
+      - swarm-ui-worker
+      - swarm-worker-core
+    capabilities:
+      - code-editing
+      - ui-implementation
+      - full-stack-integration
+      - build-verification
+    preferredTaskTypes:
+      - implementation
+      - ui
+      - frontend
+      - integration
+      - feature
+    maxConcurrentTasks: 1
+    acceptsBroadcast: false
+
+  - id: swarm8
+    name: Watch
+    role: Ops / Health / Lifecycle
+    specialty: gateway health, cron, runtime/process status, lifecycle sweeps
+    model: GPT-5.4
+    mission: Keep the local swarm/gateway environment stable and observable when explicitly assigned.
+    skills:
+      - swarm-dev-runtime
+      - swarm-worker-core
+    capabilities:
+      - ops-health
+      - gateway-status
+      - runtime-monitoring
+      - cron
+      - lifecycle-sweep
+    preferredTaskTypes:
+      - ops
+      - health
+      - monitoring
+      - lifecycle
+    maxConcurrentTasks: 1
+    acceptsBroadcast: false
+
+  - id: qa-copy
+    name: QA Copy
+    role: Copy/Content QA Worker
+    specialty: proofreading, localization, text QA, lightweight review
+    model: Kimi K2.6
+    mission: Support Jean with copy QA/text work when explicitly assigned.
+    skills:
+      - humanizer
+    capabilities:
+      - proofreading
+      - copy-review
+      - localization
+      - text-quality
+    preferredTaskTypes:
+      - copy
+      - qa
+      - review
+      - text
+    maxConcurrentTasks: 1
+    acceptsBroadcast: false
+
+  - id: shopee-ecommerce
+    name: Shopee Ecommerce
+    role: E-commerce Marketplace Worker
+    specialty: Shopee listings, product SEO, pricing, ops
+    model: GLM-5.1
+    mission: Support Shopee/e-commerce tasks when explicitly assigned.
+    skills:
+      - ecommerce-shopee-specialist
+      - ecommerce-marketplace-ops
+    capabilities:
+      - shopee-listings
+      - marketplace-ops
+      - product-seo
+      - pricing
+    preferredTaskTypes:
+      - ecommerce
+      - shopee
+      - listing
+      - pricing
+    maxConcurrentTasks: 1
+    acceptsBroadcast: false
+
+  - id: x-social
+    name: X Social
+    role: Personal Brand / X Content Worker
+    specialty: social content drafts, brand positioning, public technical updates
+    model: GLM-5.1
+    mission: Support Jean's public presence when explicitly assigned; never post publicly without approval.
+    skills:
+      - personal-brand-content-ops
+    capabilities:
+      - x-content
+      - social-drafts
+      - brand-positioning
+      - technical-threading
+    preferredTaskTypes:
+      - social
+      - x-post
+      - draft
+      - content
+    maxConcurrentTasks: 1
+    acceptsBroadcast: false
+
+  - id: linkedin-social
+    name: LinkedIn Social
+    role: LinkedIn/Professional Content Worker
+    specialty: professional posts, portfolio updates, async work positioning
+    model: GLM-5.1
+    mission: Support LinkedIn/professional content when explicitly assigned; never post publicly without approval.
+    skills:
+      - personal-brand-content-ops
+    capabilities:
+      - linkedin-content
+      - professional-copy
+      - portfolio-updates
+    preferredTaskTypes:
+      - social
+      - linkedin
+      - content
+      - draft
+    maxConcurrentTasks: 1
+    acceptsBroadcast: false

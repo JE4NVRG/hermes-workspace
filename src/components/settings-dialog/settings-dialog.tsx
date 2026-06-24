@@ -1884,7 +1884,7 @@ function ChatContent() {
           description={
             cs.sidebarHoverExpand
               ? 'Collapsed sidebar expands temporarily on hover.'
-              : 'Collapsed sidebar stays at 48px until you click the toggle.'
+              : 'Collapsed sidebar stays at 72px until you click the toggle.'
           }
         >
           <Switch

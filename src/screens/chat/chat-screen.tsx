@@ -487,8 +487,6 @@ export function ChatScreen({
   const chatMode = useChatMode()
   const isPortableMode = chatMode === 'portable'
   const portableChatFriendlyId = isPortableMode ? 'main' : activeFriendlyId
-  // --- Issue #43 fix: lift waitingForResponse into persistent Zustand store ---
-  // The store survives component unmount, so navigating away mid-stream
   const [liveToolActivity, setLiveToolActivity] = useState<
     Array<{ name: string; timestamp: number }>
   >([])
@@ -593,6 +591,11 @@ export function ChatScreen({
   const storeWaiting = useChatStore((s) => s.waitingSessionKeys)
   const sessionKeyForWaiting = useRef<string | undefined>(undefined)
   const pendingVerifySessionKeyRef = useRef<string | undefined>(undefined)
+  // Track every key touched by the current send. New-chat portable mode can
+  // mark `new` as waiting, then resolve/navigate to a concrete UUID before
+  // completion. Clearing only the current key leaves stale sessionStorage
+  // flags and the UI keeps showing “Thinking…” until it times out.
+  const waitingKeysForCurrentSendRef = useRef<Set<string>>(new Set())
 
   // Keep the waiting-state ref in sync with the resolved session key
   sessionKeyForWaiting.current = resolvedSessionKey
@@ -638,9 +641,15 @@ export function ChatScreen({
     const key = sessionKeyForWaiting.current
     if (!key) return
     if (waiting) {
+      waitingKeysForCurrentSendRef.current.add(key)
       store.setSessionWaiting(key)
     } else {
-      store.clearSessionWaiting(key)
+      const keysToClear = new Set(waitingKeysForCurrentSendRef.current)
+      keysToClear.add(key)
+      for (const waitingKey of keysToClear) {
+        store.clearSessionWaiting(waitingKey)
+      }
+      waitingKeysForCurrentSendRef.current.clear()
     }
   }, [])
   // verification before showing thinking (Issue #449).
@@ -995,6 +1004,7 @@ export function ChatScreen({
       return data
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
   })
 
   const currentModelQuery = useQuery({
@@ -1025,6 +1035,7 @@ export function ChatScreen({
         return ''
       }
     },
+    staleTime: 30_000,
     refetchInterval: 30_000,
     retry: false,
   })
@@ -1140,6 +1151,8 @@ export function ChatScreen({
       }) => {
         const activeSend = activeSendRef.current
         if (activeSend) {
+          waitingKeysForCurrentSendRef.current.add(sessionKey)
+          if (friendlyId) waitingKeysForCurrentSendRef.current.add(friendlyId)
           activeSendRef.current = {
             ...activeSend,
             sessionKey,

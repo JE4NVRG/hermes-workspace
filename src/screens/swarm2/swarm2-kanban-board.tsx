@@ -137,6 +137,9 @@ const LANES: Array<{ id: KanbanLane; label: string; hint: string }> = [
   { id: 'done', label: 'Done', hint: 'Accepted / archived' },
 ]
 
+const OPERATIONAL_LANES = new Set<KanbanLane>(['ready', 'running', 'review', 'blocked'])
+const DEFAULT_OPERATIONAL_MISSION_ID = 'workspace-finalization-20260503'
+
 const LANE_TONE: Record<KanbanLane, string> = {
   backlog: 'border-slate-400/40 bg-slate-500/10 text-slate-700',
   ready: 'border-blue-400/40 bg-blue-500/10 text-blue-700',
@@ -264,6 +267,7 @@ export function Swarm2KanbanBoard({
   const [activeLabelFilter, setActiveLabelFilter] = useState<string | null>(null)
   const [linkLatestMission, setLinkLatestMission] = useState(Boolean(latestMission))
   const [backendToast, setBackendToast] = useState<KanbanBackendPresentation | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
   const lastToastedBackendKey = useRef<string | null>(null)
 
   // Poll every 5s so cards added/moved on the Hermes Dashboard appear here
@@ -279,6 +283,7 @@ export function Swarm2KanbanBoard({
 
   const backend = query.data?.backend ?? null
   const backendPresentation = useMemo(() => getKanbanBackendPresentation(backend), [backend])
+  const activeMissionId = latestMission?.id ?? DEFAULT_OPERATIONAL_MISSION_ID
 
   useEffect(() => {
     if (!backend) return
@@ -307,7 +312,7 @@ export function Swarm2KanbanBoard({
       assignedWorker: draftWorker || null,
       reviewer: draftReviewer || null,
       status: draftStatus,
-      missionId: linkLatestMission ? latestMission?.id ?? null : null,
+      missionId: linkLatestMission ? activeMissionId : null,
       tags: splitTags(draftLabels),
     }),
     onSuccess: async () => {
@@ -330,19 +335,24 @@ export function Swarm2KanbanBoard({
     },
   })
 
+  const allCards = query.data?.cards ?? []
+
   const labelOptions = useMemo(() => {
     const labels = new Map<string, ParsedTaskLabel>()
-    for (const card of query.data?.cards ?? []) {
+    for (const card of allCards) {
       for (const tag of card.tags ?? []) {
         const parsed = parseTaskLabel(tag)
         if (parsed) labels.set(`${parsed.tier1}${parsed.tier2 ? `/${parsed.tier2}` : ''}`, parsed)
       }
     }
     return [...labels.entries()].map(([key, label]) => ({ key, label }))
-  }, [query.data])
+  }, [allCards])
 
   const visibleCards = useMemo(() => {
-    const cards = query.data?.cards ?? []
+    let cards = allCards
+    if (!showHistory && activeMissionId) {
+      cards = cards.filter((card) => card.missionId === activeMissionId && OPERATIONAL_LANES.has(card.status))
+    }
     if (!activeLabelFilter) return cards
     return cards.filter((card) =>
       (card.tags ?? []).some((tag) => {
@@ -351,7 +361,7 @@ export function Swarm2KanbanBoard({
         return key === activeLabelFilter || parsed?.tier1 === activeLabelFilter
       }),
     )
-  }, [activeLabelFilter, query.data])
+  }, [activeLabelFilter, activeMissionId, allCards, showHistory])
 
   const cardsByLane = useMemo(() => {
     const map = new Map<KanbanLane, Array<SwarmKanbanCard>>()
@@ -363,7 +373,9 @@ export function Swarm2KanbanBoard({
     return map
   }, [visibleCards])
 
-  const total = query.data?.cards.length ?? 0
+  const total = visibleCards.length
+  const allTotal = allCards.length
+  const historyHiddenCount = Math.max(0, allTotal - total)
   const reviewCount = cardsByLane.get('review')?.length ?? 0
   const blockedCount = cardsByLane.get('blocked')?.length ?? 0
 
@@ -374,11 +386,20 @@ export function Swarm2KanbanBoard({
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--theme-muted)]">Manual planning</div>
           <h2 className="mt-1 text-lg font-semibold text-[var(--theme-text)]">Swarm Board</h2>
           <p className="mt-1 max-w-3xl text-xs leading-relaxed text-[var(--theme-muted-2)]">
-            Auto-detects the shared Kanban store by default; if it is unavailable, cards stay in a local fallback. Dispatch stays explicit through Router.
+            Default view is mission-first: ready/running/review/blocked cards for the active mission stay visible while legacy history remains preserved behind the History toggle.
           </p>
+          {!showHistory && activeMissionId ? (
+            <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2.5 py-1 text-[11px] font-semibold text-[var(--theme-muted)]" title={activeMissionId}>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Current mission: <span className="truncate text-[var(--theme-text)]">{latestMission?.title ?? activeMissionId}</span>
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--theme-muted)]">
-          <span className="rounded-full border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1">{total} cards</span>
+          <span className="rounded-full border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1">{total} visible / {allTotal} total</span>
+          {!showHistory && historyHiddenCount > 0 ? (
+            <span className="rounded-full border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1">{historyHiddenCount} legacy hidden</span>
+          ) : null}
           {backendPresentation.dashboardUrl ? (
             <a
               href={backendPresentation.dashboardUrl}
@@ -431,9 +452,17 @@ export function Swarm2KanbanBoard({
           <span className="rounded-full border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1">{blockedCount} blocked</span>
           <button
             type="button"
+            onClick={() => setShowHistory((value) => !value)}
+            className="rounded-full border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-1.5 font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-card2)] hover:text-[var(--theme-text)]"
+            title="Toggle preserved legacy cards"
+          >
+            {showHistory ? 'Current mission' : 'History'}
+          </button>
+          <button
+            type="button"
             onClick={() => {
               setDraftWorker(selectedWorkerId ?? '')
-              setLinkLatestMission(Boolean(latestMission))
+              setLinkLatestMission(Boolean(activeMissionId))
               setComposerOpen((open) => !open)
             }}
             className="rounded-full bg-[var(--theme-accent)] px-3 py-1.5 font-semibold text-primary-950 hover:bg-[var(--theme-accent-strong)]"
@@ -542,8 +571,8 @@ export function Swarm2KanbanBoard({
                 <span className="mt-1 block text-[10px] text-[var(--theme-muted)]">Use label:Business/Sub-scope for the two-tier board filter.</span>
               </label>
               <label className="flex items-center gap-2 self-end rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-xs text-[var(--theme-muted)]">
-                <input type="checkbox" checked={linkLatestMission} disabled={!latestMission} onChange={(event) => setLinkLatestMission(event.target.checked)} />
-                Link latest mission{latestMission ? `: ${latestMission.title}` : ''}
+                <input type="checkbox" checked={linkLatestMission} disabled={!activeMissionId} onChange={(event) => setLinkLatestMission(event.target.checked)} />
+                Link current mission{activeMissionId ? `: ${latestMission?.title ?? activeMissionId}` : ''}
               </label>
               {createMutation.error ? <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs text-red-700 md:col-span-2">{createMutation.error.message}</div> : null}
               <div className="flex justify-end gap-2 md:col-span-2">

@@ -56,11 +56,25 @@ export function resolveWorkerWrapperName(workerId: string, worker?: Pick<SwarmRo
 function listSwarmIds(): Array<string> {
   const dir = getProfilesDir()
   if (!existsSync(dir)) return []
+  const priority = [
+    'orchestrator',
+    'auditor',
+    'exploit-dev',
+    'reviewer',
+    'report-writer',
+    'ops',
+  ]
   return readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .filter((name) => isSwarmWorkerId(name))
-    .sort()
+    // JE4NDEV workers can be semantic profile IDs, not only swarmN.
+    .filter((name) => name !== 'default' && isSwarmWorkerId(name))
+    .sort((a, b) => {
+      const ai = priority.indexOf(a)
+      const bi = priority.indexOf(b)
+      if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
+      return a.localeCompare(b)
+    })
 }
 
 function readWorkerConfig(profilePath: string): { model: string; provider: string } {

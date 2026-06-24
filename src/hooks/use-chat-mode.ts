@@ -22,7 +22,8 @@ export function useChatMode(): ChatMode {
       return (await res.json()) as GatewayStatus
     },
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
+    refetchIntervalInBackground: false,
   })
 
   if (!data?.capabilities) return 'disconnected'

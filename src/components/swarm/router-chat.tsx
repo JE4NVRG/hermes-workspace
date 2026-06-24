@@ -165,6 +165,21 @@ export function RouterChat({
       `${m.sessionCount} sess · ${m.totalTokens} tok`,
     ].filter(Boolean).join(' · '),
   }))
+  const hasDispatchTarget =
+    mode === 'manual'
+      ? Boolean(selectedId)
+      : mode === 'broadcast'
+        ? roomIds.length > 0 || members.length > 0
+        : members.length > 0
+  const dispatchDisabled =
+    dispatching || decomposing || !prompt.trim() || !hasDispatchTarget
+  const dispatchHint = !prompt.trim()
+    ? 'Type a mission first.'
+    : !hasDispatchTarget
+      ? mode === 'manual'
+        ? 'Select one worker before sending.'
+        : 'Add or discover a swarm worker before routing.'
+      : null
 
   async function autoDecompose(): Promise<Array<Assignment> | null> {
     if (!prompt.trim()) return null
@@ -330,18 +345,18 @@ export function RouterChat({
         )}>
           <div className="flex flex-col gap-2">
             <textarea
-              rows={embedded ? 5 : 7}
+              rows={embedded ? 4 : 6}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               disabled={decomposing || dispatching}
               placeholder={
                 mode === 'auto'
-                  ? "Describe the mission, e.g. 'Sweep open PRs, then summarise BenchLoop runs from PC1, draft a launch tweet.'"
+                  ? 'Describe the mission…'
                   : mode === 'manual'
                     ? `Message ${selectedId ?? 'select a worker first'}…`
                     : "Broadcast to the room (or all workers if no room): 'Status check.'"
               }
-              className="min-h-[8rem] resize-y rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-sm text-[var(--theme-text)] placeholder:text-[var(--theme-muted)] focus:border-[var(--theme-accent)] focus:outline-none"
+              className="min-h-[6.5rem] resize-y rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-sm text-[var(--theme-text)] placeholder:text-[var(--theme-muted)] focus:border-[var(--theme-accent)] focus:outline-none"
             />
             {!embedded ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -368,6 +383,11 @@ export function RouterChat({
               {embedded ? (
                 <div className="flex flex-wrap items-center gap-3">
                   <ModeToggle mode={mode} setMode={setMode} />
+                  {dispatchHint ? (
+                    <span className="text-[11px] text-[var(--theme-muted)]">
+                      {dispatchHint}
+                    </span>
+                  ) : null}
                 </div>
               ) : (
                 <div className="text-[11px] text-[var(--theme-muted)]">
@@ -391,17 +411,12 @@ export function RouterChat({
                 <button
                   type="button"
                   onClick={dispatch}
-                  disabled={
-                    dispatching ||
-                    decomposing ||
-                    !prompt.trim() ||
-                    (mode === 'manual' && !selectedId)
-                  }
+                  disabled={dispatchDisabled}
                   className={cn(
                     'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold',
                     dispatching || decomposing
                       ? 'bg-[var(--theme-accent-soft)] text-[var(--theme-text)]'
-                      : 'bg-[var(--theme-accent)] text-primary-950 hover:bg-[var(--theme-accent-strong)] disabled:opacity-50',
+                      : 'bg-[var(--theme-accent)] text-primary-950 hover:bg-[var(--theme-accent-strong)] disabled:cursor-not-allowed disabled:opacity-45',
                   )}
                 >
                   <HugeiconsIcon

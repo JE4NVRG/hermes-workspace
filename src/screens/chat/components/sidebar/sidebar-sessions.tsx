@@ -19,6 +19,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 
+const MAX_VISIBLE_UNPINNED_SESSIONS = 32
+
 type SidebarSessionsProps = {
   sessions: Array<SessionMeta>
   activeFriendlyId: string
@@ -59,6 +61,16 @@ export const SidebarSessions = memo(function SidebarSessions({
     }
     return [pinned, unpinned] as const
   }, [pinnedSessionKeys, sessions])
+
+  const visibleUnpinnedSessions = useMemo(
+    () => unpinnedSessions.slice(0, MAX_VISIBLE_UNPINNED_SESSIONS),
+    [unpinnedSessions],
+  )
+
+  const hiddenUnpinnedCount = Math.max(
+    0,
+    unpinnedSessions.length - visibleUnpinnedSessions.length,
+  )
 
   function handleTogglePin(session: SessionMeta) {
     togglePinnedSession(session.key)
@@ -124,12 +136,12 @@ export const SidebarSessions = memo(function SidebarSessions({
                     Retry
                   </Button>
                 </div>
-              ) : unpinnedSessions.length > 0 ? (
+              ) : visibleUnpinnedSessions.length > 0 ? (
                 <>
                   {pinnedSessions.length > 0 ? (
                     <div className="my-1 border-t border-primary-200/80" />
                   ) : null}
-                  {unpinnedSessions.map((session) => (
+                  {visibleUnpinnedSessions.map((session) => (
                     <SessionItem
                       key={session.key}
                       session={session}
@@ -141,6 +153,11 @@ export const SidebarSessions = memo(function SidebarSessions({
                       onDelete={onDelete}
                     />
                   ))}
+                  {hiddenUnpinnedCount > 0 ? (
+                    <div className="px-2 py-2 text-[11px] leading-snug text-primary-500">
+                      Showing latest {visibleUnpinnedSessions.length} of {unpinnedSessions.length} sessions. Use Search for older sessions.
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <div className="px-2 py-2 text-xs text-primary-500">

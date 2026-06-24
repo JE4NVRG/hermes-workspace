@@ -962,7 +962,9 @@ function ChatComposerComponent({
   const modelsQuery = useQuery({
     queryKey: ['claude', 'models'],
     queryFn: fetchModels,
-    refetchInterval: 60_000,
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: false,
     retry: false,
   })
   const currentProvider = modelsQuery.data?.currentProvider ?? ''
@@ -1005,6 +1007,7 @@ function ChatComposerComponent({
   const currentModelQuery = useQuery({
     queryKey: ['claude', 'session-status-model', sessionKey || 'main'],
     queryFn: () => fetchCurrentModelFromStatus(sessionKey),
+    staleTime: 30_000,
     refetchInterval: 30_000,
     retry: false,
   })

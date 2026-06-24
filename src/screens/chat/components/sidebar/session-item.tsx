@@ -138,7 +138,7 @@ function SessionItemComponent({
       }}
       className={cn(
         'group inline-flex items-center justify-between',
-        'w-full text-left pl-1.5 pr-0.5 h-14 rounded-lg transition-colors duration-0',
+        'w-full text-left pl-2 pr-1 min-h-14 rounded-lg transition-colors duration-0',
         'select-none',
         active
           ? 'bg-primary-200 text-primary-950'
@@ -148,7 +148,7 @@ function SessionItemComponent({
       <div className="flex-1 min-w-0 py-1.5">
         <div
           className={cn(
-            'truncate text-sm font-[500]',
+            'line-clamp-2 text-sm font-[500] leading-snug',
             isGenerating ? 'text-primary-700' : '',
           )}
         >
@@ -158,7 +158,7 @@ function SessionItemComponent({
         </div>
         <div
           className={cn(
-            'mt-0.5 text-[11px] text-primary-600 truncate',
+            'mt-0.5 truncate text-[11px] text-primary-600',
             isError ? 'text-red-600' : undefined,
           )}
         >
@@ -173,8 +173,8 @@ function SessionItemComponent({
             event.stopPropagation()
           }}
           className={cn(
-            'ml-2 inline-flex size-7 items-center justify-center rounded-md text-primary-700',
-            'opacity-0 transition-opacity group-hover:opacity-100 hover:bg-primary-200 dark:hover:bg-primary-800',
+            'ml-2 inline-flex size-8 items-center justify-center rounded-md text-primary-700',
+            'opacity-70 transition-opacity group-hover:opacity-100 hover:bg-primary-200 dark:hover:bg-primary-800',
             'aria-expanded:opacity-100 aria-expanded:bg-primary-200',
           )}
           aria-label="Session options"

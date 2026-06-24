@@ -842,9 +842,13 @@ export function AgentViewPanel() {
           }}
           className={cn(
             'relative h-full shrink-0 overflow-hidden bg-[color:var(--theme-sidebar,#060914)]/92 backdrop-blur-xl',
-            panelVisible ? 'pointer-events-auto' : 'pointer-events-none',
+            panelVisible ? 'pointer-events-auto' : 'pointer-events-none invisible',
           )}
+          aria-hidden={panelVisible ? undefined : true}
+          {...(!panelVisible ? { inert: true } : {})}
         >
+          {panelVisible ? (
+            <>
           <div className="px-3 py-2">
             {/* Row 1: Count left | Title center | Actions right */}
             <div className="flex items-center justify-between">
@@ -1256,6 +1260,8 @@ export function AgentViewPanel() {
             </ScrollAreaScrollbar>
             <ScrollAreaCorner />
           </ScrollAreaRoot>
+            </>
+          ) : null}
         </motion.aside>
       ) : (
         /* Mobile: slide-up sheet */

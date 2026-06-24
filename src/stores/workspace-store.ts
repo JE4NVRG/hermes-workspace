@@ -34,7 +34,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
     (set) => ({
       sidebarCollapsed: false,
-      fileExplorerCollapsed: true,
+      fileExplorerCollapsed: false,
       chatFocusMode: false,
       activeSubPage: null,
       chatPanelOpen: false,

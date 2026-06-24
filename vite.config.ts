@@ -98,6 +98,14 @@ const config = defineConfig(({ mode, command }) => {
     }
   }
   const claudeApiUrl = env.CLAUDE_API_URL?.trim() || 'http://127.0.0.1:8642'
+  const gatewayProxyBearerToken =
+    env.HERMES_API_TOKEN?.trim() ||
+    env.CLAUDE_API_TOKEN?.trim() ||
+    env.API_SERVER_KEY?.trim() ||
+    process.env.HERMES_API_TOKEN?.trim() ||
+    process.env.CLAUDE_API_TOKEN?.trim() ||
+    process.env.API_SERVER_KEY?.trim() ||
+    ''
   // /api/connection-status is handled by the real route file at
   // src/routes/api/connection-status.ts; the dev server no longer
   // intercepts that path with a slim shortcut. See #285.
@@ -552,6 +560,16 @@ const config = defineConfig(({ mode, command }) => {
           target: proxyTarget,
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/claude-proxy/, ''),
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
+              if (gatewayProxyBearerToken) {
+                proxyReq.setHeader(
+                  'Authorization',
+                  `Bearer ${gatewayProxyBearerToken}`,
+                )
+              }
+            })
+          },
         },
         '/claude-ui': {
           target: proxyTarget,

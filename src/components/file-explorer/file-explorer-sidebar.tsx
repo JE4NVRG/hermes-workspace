@@ -155,8 +155,13 @@ export function FileExplorerSidebar({
   }, [])
 
   useEffect(() => {
+    if (collapsed) return
     void refresh()
-  }, [refresh])
+  }, [collapsed, refresh])
+
+  useEffect(() => {
+    if (collapsed) setContextMenu(null)
+  }, [collapsed])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -381,15 +386,13 @@ export function FileExplorerSidebar({
     [activePath, expanded, handleFileClick, isSearchActive, setContextMenu],
   )
 
-  if (hidden) return null
+  if (hidden || collapsed) return null
 
   return (
     <aside
       className={cn(
         'border-r border-primary-200 bg-primary-100 h-full flex flex-col transition-all duration-200 ease-out',
-        collapsed
-          ? 'w-0 opacity-0 pointer-events-none'
-          : 'w-[260px] opacity-100',
+        'w-[260px] opacity-100',
         className,
       )}
     >

@@ -53,10 +53,14 @@ const UpdateCardSchema = CreateCardSchema.partial().extend({
 export const Route = createFileRoute('/api/swarm-kanban')({
   server: {
     handlers: {
-      GET: async () => {
+      GET: async ({ request }) => {
+        const url = new URL(request.url)
+        const missionId = url.searchParams.get('missionId')?.trim() || null
+        const status = url.searchParams.get('status')?.trim() || null
+        const operational = url.searchParams.get('operational') === '1' || url.searchParams.get('operational') === 'true'
         return json({
           ok: true,
-          cards: await listKanbanCards(),
+          cards: await listKanbanCards({ missionId, status, operational }),
           backend: getKanbanBackendMeta(),
         })
       },

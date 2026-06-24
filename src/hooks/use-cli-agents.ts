@@ -79,7 +79,9 @@ export function useCliAgents() {
   return useQuery({
     queryKey: ['sidebar', 'cli-agents'],
     queryFn: fetchCliAgents,
-    refetchInterval: 5_000,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
     retry: false,
   })
 }

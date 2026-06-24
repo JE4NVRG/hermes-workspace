@@ -295,6 +295,7 @@ describe('kanban-backend', () => {
                 assignee: 'temujin',
                 created_at: 1777527540,
                 updated_at: 1777527540,
+                tenant: 'workspace-finalization-20260503',
                 parents_json: '["t_parent"]',
                 children_json: '[]',
               },
@@ -313,17 +314,20 @@ describe('kanban-backend', () => {
       status: 'ready',
       parents: ['t_parent'],
       idempotencyKey: 'native-dispatch-1',
+      missionId: 'workspace-finalization-20260503',
     } as any)
 
     expect(created).toMatchObject({
       id: 't_created',
       status: 'ready',
+      missionId: 'workspace-finalization-20260503',
       parents: ['t_parent'],
       source: 'native-kanban',
     })
     expect(sqliteCalls.some((call) => call.includes('begin immediate') && call.includes('commit'))).toBe(true)
     expect(sqliteCalls.some((call) => call.includes('task_links') && call.includes('t_parent'))).toBe(true)
     expect(sqliteCalls.some((call) => call.includes('idempotency_key') && call.includes('native-dispatch-1'))).toBe(true)
+    expect(sqliteCalls.some((call) => call.includes('tenant') && call.includes('workspace-finalization-20260503'))).toBe(true)
     expect(sqliteCalls.every((call) => !call.includes('swarm2-kanban.json'))).toBe(true)
   })
 })
