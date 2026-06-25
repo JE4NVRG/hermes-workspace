@@ -134,17 +134,65 @@ Screenshot:
 
 `/home/jean/hermes-workspace/qa-artifacts/supabase-project-center/supabase-rbac-gates-after-wait-1440x900.png`
 
+### Validação real de criação via DDL transacional
+
+Jean aprovou seguir com a opção recomendada: criar projeto smoke descartável.
+
+Payload aplicado pelo gate do Project Center:
+
+```text
+slug: smoke-supabase-202606252247
+schema: smoke_supabase_202606252247
+environment: development
+sensitivity: low
+confirmation: CRIAR smoke-supabase-202606252247
+```
+
+Resultado do `POST /api/supabase-registry`: HTTP 201.
+
+Projeto criado com:
+
+- schema `smoke_supabase_202606252247`
+- `allow_agent_read=false`
+- `allow_agent_write=false`
+- risco inicial P1 `Projeto recém-criado aguarda classificação de RLS e grants`
+- grants metadata para `luna`, `gerente` e `security`
+- nenhum grant para `dev3`
+
+Verificação direta no PostgreSQL/Supabase real:
+
+```json
+{"schema_exists": true, "registry_exists": true, "anon_usage": false, "authenticated_usage": false, "acl": "{postgres=UC/postgres}"}
+```
+
+Verificação de pacote seguro após criação:
+
+```text
+smoke + luna     -> 200, metadata, readOnly=true, sem env sensível
+smoke + security -> 200, metadata, readOnly=true, sem env sensível
+smoke + dev3     -> 403, sem grant
+```
+
+QA visual headless após criação:
+
+- `/supabase`: HTTP 200
+- `/api/supabase-registry`: HTTP 200
+- DOM contém `smoke-supabase-202606252247`
+- DOM contém `Smoke Supabase Project Center`
+- DOM contém `AGENTES E GRANTS`
+- DOM contém `P1`
+
+Screenshot:
+
+`/home/jean/hermes-workspace/qa-artifacts/supabase-project-center/supabase-smoke-project-created-1440x1200.png`
+
 ## Status dos cards
 
-- `t_f667ce47` — pacote seguro de URL/API para agentes: pronto para marcar `done`.
-- `t_fffb65cf` — RBAC de agentes e gates P0/P1: pronto para marcar `done`.
-- `t_1cc0a1d0` — QA fluxo Workspace Sentinel Supabase: pronto para marcar `done` para o escopo sem DDL real.
-- `t_71bdd3ea` — criação real de projetos: manter `blocked` até Jean aprovar um slug/schema real ou smoke. Motivo: envolve DDL/DML no Supabase/PostgreSQL real.
+- `t_f667ce47` — pacote seguro de URL/API para agentes: `done`.
+- `t_fffb65cf` — RBAC de agentes e gates P0/P1: `done`.
+- `t_1cc0a1d0` — QA fluxo Workspace Sentinel Supabase: `done`.
+- `t_71bdd3ea` — criação real de projetos: pronto para marcar `done` após smoke real criado e verificado.
 
 ## Próxima decisão necessária
 
-Para fechar 100% o card de criação real, Jean precisa escolher:
-
-1. Criar projeto real agora com slug/schema definidos; ou
-2. Criar projeto smoke descartável para validar o fluxo DDL transacional; ou
-3. Deixar criação real bloqueada e avançar para outra frente.
+Nenhuma para o Supabase Project Center. Próxima frente recomendada: ArchScene/DNS/Stripe ou UI polish pendente do Workspace, conforme prioridade operacional.
