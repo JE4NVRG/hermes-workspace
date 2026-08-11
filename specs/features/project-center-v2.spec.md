@@ -1,7 +1,7 @@
 # Project Center v2 — Especificação técnica
 
 - Status: proposta executável para Gate 3/4
-- Issue: `JE4NVRG/je4ndev-platform-core#5`
+- Issues: `JE4NVRG/je4ndev-platform-core#5`, `#12`
 - Contrato HTTP: `specs/contracts/project-center-v2.openapi.yaml`
 - Decisão arquitetural: `docs/adr/0001-project-center-v2-control-plane.md`
 
@@ -23,15 +23,17 @@ Princípios invioláveis:
 
 ## 2. Atores e autorização
 
-| Ator                         | Capacidades mínimas                                               |
-| ---------------------------- | ----------------------------------------------------------------- |
-| `agent:read`                 | consultar status, auditoria sanitizada e contexto registrado      |
-| `admin:project-factory`      | criar dry-run, solicitar execução, verificar e solicitar rollback |
-| `admin:approve-side-effects` | aprovar ou rejeitar plano dentro da validade                      |
-| `platform-worker`            | consumir operação aprovada e executar ações internas tipadas      |
-| `auditor`                    | consultar eventos e evidências sanitizadas, sem secrets           |
+O contrato OpenAPI é a fonte canônica da matriz em `x-rbac-policy` e do requisito de cada operação em `x-required-scopes`. Esta tabela é uma projeção humana desses identificadores, não um vocabulário alternativo:
 
-Para `environment=production`, o aprovador deve ser humano, possuir `admin:approve-side-effects` e ser diferente do solicitante. Tokens de agente não podem aprovar, mesmo acumulando outros scopes. Autorização é validada novamente em `execute` e `rollback`; aprovação expirada ou revogada não é reutilizada.
+| Role canônica      | Scopes canônicos                                                        | Operações HTTP (`operationId`)                                                                                                      |
+| ------------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `project_reader`   | `project:read`                                                          | `getProjectOperation`                                                                                                               |
+| `project_operator` | `project:plan`, `project:execute`, `project:verify`, `project:rollback` | `createProjectDryRun`, `executeProjectOperation`, `verifyProjectOperation`, `createProjectRollbackDryRun`, `executeProjectRollback` |
+| `project_approver` | `project:approve`                                                       | `decideProjectOperationApproval`, `decideProjectRollbackApproval`                                                                   |
+| `project_auditor`  | `project:audit`                                                         | `listProjectOperationAudit`                                                                                                         |
+| `platform_worker`  | `project:worker`                                                        | consumo interno de fila aprovada; não é uma operação HTTP pública                                                                   |
+
+Todos os ambientes usam a mesma matriz com `default: deny`. Para `environment=production`, o aprovador deve ser humano, possuir role `project_approver`/scope `project:approve` e ser diferente do solicitante. Tokens de agente não podem aprovar, mesmo acumulando outros scopes. No rollback destrutivo, o aprovador também deve ser diferente do solicitante da operação original. Autorização é validada novamente em `execute` e `rollback/execute`; aprovação expirada ou revogada não é reutilizada.
 
 ## 3. Modelo de domínio
 
@@ -104,7 +106,7 @@ Estados:
 - `manual_intervention_required`: não foi possível provar segurança para continuar/compensar;
 - `rejected`, `expired` e `cancelled`: estados terminais antes da execução.
 
-Transições permitidas:
+Transições permitidas (projeção de `components.schemas.OperationState.x-allowed-transitions`, fonte canônica):
 
 ```text
 planned -> awaiting_approval
@@ -123,7 +125,9 @@ Qualquer outra transição retorna `INVALID_STATE_TRANSITION`. Estados terminais
 
 ### 5.1 Idempotência
 
-- Toda mutação exige `Idempotency-Key` (UUID ou 16–128 caracteres de `[A-Za-z0-9._:-]`).
+- Toda mutação exige `Idempotency-Key` (UUID ou 16–128 caracteres de `[A-Za-z0-9._:-]`), gerada e persistida pelo cliente/SDK **antes da primeira tentativa**, inclusive o primeiro POST.
+- Depois de timeout sem resposta, o cliente reutiliza a mesma chave; IDs internos gerados pelo servidor não substituem essa chave.
+- O servidor nunca persiste a chave bruta em logs ou na operação: guarda somente `idempotency_key_hash`.
 - A chave é vinculada a `actor_id + method + route template + canonical request hash` por 24 horas.
 - Mesma chave e mesmo payload devolvem a operação original e `Idempotency-Replayed: true`.
 - Mesma chave com payload diferente retorna `409 IDEMPOTENCY_KEY_REUSED`.
@@ -138,10 +142,14 @@ Qualquer outra transição retorna `INVALID_STATE_TRANSITION`. Estados terminais
 3. `POST .../{operation_id}/execute`: enfileira operação aprovada; responde `202` e nunca executa no request web.
 4. `GET .../{operation_id}`: status e resultado sanitizado.
 5. `POST .../{operation_id}/verify`: enfileira verificação read-only e prova isolamento/backup/health conforme driver.
-6. `POST .../{operation_id}/rollback`: cria plano de compensação, sujeito a confirmação e política; rollback destrutivo exige nova aprovação de produção.
-7. `GET .../{operation_id}/audit`: eventos append-only paginados e sanitizados.
+6. `POST .../{operation_id}/rollback/dry-run`: observa ownership/drift e cria plano tipado sem side effects, com `rollback_plan_hash` próprio.
+7. `POST .../{operation_id}/rollback/approve`: aprova ou rejeita o hash exato; aprovação destrutiva é segregada da solicitação e da aprovação original.
+8. `POST .../{operation_id}/rollback/execute`: revalida `approval_id`, hash, ownership, drift e política e só então enfileira a compensação.
+9. `GET .../{operation_id}/audit`: eventos append-only paginados e sanitizados.
 
 O contrato canônico, erros e exemplos estão no OpenAPI. Respostas incluem `request_id`; operações assíncronas incluem `operation_id`, `state` e `status_url`.
+
+`ApprovalRequest` e `RollbackApprovalRequest` usam `oneOf` discriminado por `decision`. O ramo `approve` exige hash e frase de confirmação; o ramo `reject` exige motivo e proíbe a frase de aprovação semanticamente falsa.
 
 ## 7. Planner e ações tipadas
 
@@ -305,7 +313,9 @@ Verificação `supabase_isolated` adiciona:
 - não existe bind público de PostgreSQL;
 - backup e restore test da stack passam.
 
-Rollback compensa apenas recursos criados pela operação e confirmados por ownership marker. Nunca remove recurso preexistente/adotado, com dados não vazios ou generation diferente sem novo plano destrutivo e aprovação. Falha em provar ownership resulta em `MANUAL_INTERVENTION_REQUIRED`.
+Rollback compensa apenas recursos criados pela operação e confirmados por ownership marker. O dry-run persiste `RollbackPlan` imutável, `observed_revision`, classificação `destructive`, validade e `rollback_plan_hash`. Nunca remove recurso preexistente/adotado, com dados não vazios ou generation diferente sem novo plano destrutivo e aprovação. Falha em provar ownership impede a criação de plano executável e resulta em `MANUAL_INTERVENTION_REQUIRED`.
+
+A aprovação de provisionamento não vale para rollback. O endpoint de rollback registra novo `approval_id`, vinculado ao `rollback_plan_hash`; para ação destrutiva, o aprovador é outro humano, diferente do solicitante do rollback e do solicitante da operação original. `rollback/execute` falha com `APPROVAL_REQUIRED`, `APPROVAL_EXPIRED`, `PLAN_STALE` ou `ROLLBACK_NOT_SAFE` antes de adquirir lease quando qualquer invariante não for comprovada.
 
 ## 15. Critérios de aceite para implementação
 
@@ -332,3 +342,13 @@ Rollback compensa apenas recursos criados pela operação e confirmados por owne
 6. Fazer rollout `development -> staging -> production`, com aprovação humana por ambiente, métricas e rollback ensaiado.
 
 Deploy exige migrations versionadas do storage de control plane, backup prévio, revisão Dev/QA/Security, configuração de secrets pelo operador (fora do Git), ativação gradual das feature flags e smoke real. O rollback do deploy desativa workers/flags e preserva operações/auditoria; nunca apaga automaticamente recursos provisionados.
+
+## 17. Rastreabilidade do reteste QA
+
+| Achado      | Correção canônica neste artefato                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| PCV2-QA-001 | enum e tabela únicos em `OperationState`/`x-allowed-transitions`; esta spec apenas os projeta                    |
+| PCV2-QA-002 | três fases de rollback, `RollbackPlan`, `rollback_plan_hash`, aprovação segregada e execução separada            |
+| PCV2-QA-004 | matriz `x-rbac-policy` role → scope → `operationId`, com `x-required-scopes` por operação                        |
+| PCV2-QA-005 | chave do primeiro request gerada/persistida pelo cliente; servidor guarda somente hash                           |
+| PCV2-QA-006 | `ApprovalRequest` e `RollbackApprovalRequest` discriminados; rejeição exige motivo, não confirmação de aprovação |

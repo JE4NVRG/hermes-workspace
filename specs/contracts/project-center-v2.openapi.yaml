@@ -13,6 +13,49 @@ servers:
     description: Workspace autenticado
 security:
   - bearerAuth: []
+x-rbac-policy:
+  version: pcv2-rbac-v1
+  default: deny
+  roles:
+    project_reader:
+      scopes: [project:read]
+      operations: [getProjectOperation]
+      environments: [development, staging, production]
+    project_operator:
+      scopes: [project:plan, project:execute, project:verify, project:rollback]
+      operations:
+        [
+          createProjectDryRun,
+          executeProjectOperation,
+          verifyProjectOperation,
+          createProjectRollbackDryRun,
+          executeProjectRollback,
+        ]
+      environments: [development, staging, production]
+    project_approver:
+      scopes: [project:approve]
+      operations:
+        [decideProjectOperationApproval, decideProjectRollbackApproval]
+      environments: [development, staging, production]
+    project_auditor:
+      scopes: [project:audit]
+      operations: [listProjectOperationAudit]
+      environments: [development, staging, production]
+    platform_worker:
+      scopes: [project:worker]
+      operations: []
+      environments: [development, staging, production]
+      internal_only: true
+  segregation:
+    production_approval:
+      operation_kinds: [provision, rollback]
+      approver_must_be_human: true
+      approver_must_differ_from_requester: true
+      agent_tokens_may_approve: false
+    destructive_rollback:
+      approver_must_differ_from_requester: true
+      approver_must_differ_from_original_operation_requester: true
+      approval_bound_to: rollback_plan_hash
 tags:
   - name: Operations
     description: Ciclo idempotente de planejamento, aprovação, execução, verificação e rollback.
@@ -23,8 +66,9 @@ paths:
     post:
       tags: [Operations]
       operationId: createProjectDryRun
+      x-required-scopes: [project:plan]
       summary: Planeja o provisionamento sem side effects
-      description: Requer scope admin:project-factory.
+      description: Requer role project_operator e scope project:plan.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/RequestId'
@@ -63,9 +107,11 @@ paths:
     post:
       tags: [Operations]
       operationId: decideProjectOperationApproval
+      x-required-scopes: [project:approve]
+      x-segregation: production_approval
       summary: Aprova ou rejeita o hash exato de um plano
       description: >-
-        Requer admin:approve-side-effects. Em produção o aprovador deve ser humano
+        Requer role project_approver e scope project:approve. Em produção o aprovador deve ser humano
         e diferente do solicitante.
       parameters:
         - $ref: '#/components/parameters/OperationId'
@@ -94,6 +140,7 @@ paths:
     post:
       tags: [Operations]
       operationId: executeProjectOperation
+      x-required-scopes: [project:execute]
       summary: Enfileira uma operação aprovada
       description: Revalida approval, política, hash e revisão observada.
       parameters:
@@ -127,6 +174,7 @@ paths:
     get:
       tags: [Operations]
       operationId: getProjectOperation
+      x-required-scopes: [project:read]
       summary: Consulta estado e resultado sanitizado
       parameters:
         - $ref: '#/components/parameters/OperationId'
@@ -144,6 +192,7 @@ paths:
     post:
       tags: [Operations]
       operationId: verifyProjectOperation
+      x-required-scopes: [project:verify]
       summary: Enfileira verificação read-only
       parameters:
         - $ref: '#/components/parameters/OperationId'
@@ -167,14 +216,15 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '423': { $ref: '#/components/responses/Locked' }
-  /operations/{operation_id}/rollback:
+  /operations/{operation_id}/rollback/dry-run:
     post:
       tags: [Operations]
-      operationId: rollbackProjectOperation
-      summary: Solicita compensação segura
+      operationId: createProjectRollbackDryRun
+      x-required-scopes: [project:rollback]
+      summary: Cria plano tipado de compensação sem executar side effects
       description: >-
-        Não remove recurso sem ownership comprovado. Rollback destrutivo em produção
-        cria novo gate de aprovação.
+        Observa ownership e drift, cria rollback_plan_hash próprio e não remove
+        recursos. Planos destrutivos exigem aprovação segregada posterior.
       parameters:
         - $ref: '#/components/parameters/OperationId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -184,10 +234,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RollbackRequest'
+              $ref: '#/components/schemas/RollbackDryRunRequest'
       responses:
-        '202':
-          description: Rollback enfileirado ou aguardando aprovação
+        '201':
+          description: Plano de rollback criado sem side effects
           content:
             application/json:
               schema:
@@ -197,11 +247,77 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/PolicyDenied' }
+  /operations/{operation_id}/rollback/approve:
+    post:
+      tags: [Operations]
+      operationId: decideProjectRollbackApproval
+      x-required-scopes: [project:approve]
+      x-segregation: destructive_rollback
+      summary: Aprova ou rejeita o hash exato do plano de rollback
+      description: >-
+        A aprovação é independente da aprovação de provisionamento. Em produção e
+        para ações destrutivas, o aprovador humano difere dos dois solicitantes.
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackApprovalRequest'
+      responses:
+        '200':
+          description: Decisão de rollback registrada ou replay equivalente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Expired' }
+  /operations/{operation_id}/rollback/execute:
+    post:
+      tags: [Operations]
+      operationId: executeProjectRollback
+      x-required-scopes: [project:rollback]
+      summary: Enfileira o plano de rollback aprovado
+      description: >-
+        Revalida approval_id, rollback_plan_hash, ownership, drift, policy e
+        segregação antes de adquirir o lease. Nunca executa no request web.
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackExecuteRequest'
+      responses:
+        '202':
+          description: Rollback aprovado enfileirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Expired' }
         '423': { $ref: '#/components/responses/Locked' }
   /operations/{operation_id}/audit:
     get:
       tags: [Audit]
       operationId: listProjectOperationAudit
+      x-required-scopes: [project:audit]
       summary: Lista eventos append-only sanitizados
       parameters:
         - $ref: '#/components/parameters/OperationId'
@@ -237,7 +353,11 @@ components:
       name: Idempotency-Key
       in: header
       required: true
-      description: Vinculada ao ator, rota e hash canônico do payload por 24 horas.
+      description: >-
+        Gerada e persistida pelo cliente/SDK antes da primeira tentativa, inclusive
+        antes do primeiro POST. A mesma chave deve ser reutilizada após timeout. O
+        servidor persiste somente seu hash, vinculado ao ator, rota e hash canônico
+        do payload por 24 horas; IDs internos gerados pelo servidor não a substituem.
       schema:
         type: string
         minLength: 16
@@ -356,6 +476,31 @@ components:
           expired,
           cancelled,
         ]
+      x-terminal-states:
+        [
+          rolled_back,
+          manual_intervention_required,
+          rejected,
+          expired,
+          cancelled,
+        ]
+      x-allowed-transitions:
+        planned: [awaiting_approval]
+        awaiting_approval: [approved, rejected, expired, cancelled]
+        approved: [queued, expired, cancelled]
+        queued: [executing, approved]
+        executing:
+          [verifying, failed, rollback_pending, manual_intervention_required]
+        verifying: [succeeded, rollback_pending, manual_intervention_required]
+        succeeded: [rollback_pending]
+        failed: [queued, rollback_pending]
+        rollback_pending: [rolling_back]
+        rolling_back: [rolled_back, manual_intervention_required]
+        rolled_back: []
+        manual_intervention_required: []
+        rejected: []
+        expired: []
+        cancelled: []
     Sha256:
       type: string
       pattern: '^[a-f0-9]{64}$'
@@ -416,17 +561,33 @@ components:
         intent: { $ref: '#/components/schemas/ProjectIntent' }
         reason: { type: string, minLength: 3, maxLength: 500 }
     ApprovalRequest:
+      oneOf:
+        - $ref: '#/components/schemas/ApproveRequest'
+        - $ref: '#/components/schemas/RejectRequest'
+      discriminator:
+        propertyName: decision
+        mapping:
+          approve: '#/components/schemas/ApproveRequest'
+          reject: '#/components/schemas/RejectRequest'
+    ApproveRequest:
       type: object
       additionalProperties: false
       required: [decision, plan_hash, confirmation]
       properties:
-        decision: { type: string, enum: [approve, reject] }
+        decision: { type: string, const: approve }
         plan_hash: { $ref: '#/components/schemas/Sha256' }
         confirmation:
           type: string
           minLength: 3
           maxLength: 160
           description: Frase APROVAR project_id prefixo-do-hash para aprovação.
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    RejectRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, reason]
+      properties:
+        decision: { type: string, const: reject }
         reason: { type: string, minLength: 3, maxLength: 500 }
     ExecuteRequest:
       type: object
@@ -454,18 +615,49 @@ components:
                 backup,
                 restore,
               ]
-    RollbackRequest:
+    RollbackDryRunRequest:
       type: object
       additionalProperties: false
-      required: [reason, confirmation]
+      required: [reason, preserve_data]
       properties:
         reason: { type: string, minLength: 10, maxLength: 500 }
+        preserve_data: { type: boolean, default: true }
+    RollbackApprovalRequest:
+      oneOf:
+        - $ref: '#/components/schemas/RollbackApproveRequest'
+        - $ref: '#/components/schemas/RollbackRejectRequest'
+      discriminator:
+        propertyName: decision
+        mapping:
+          approve: '#/components/schemas/RollbackApproveRequest'
+          reject: '#/components/schemas/RollbackRejectRequest'
+    RollbackApproveRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, rollback_plan_hash, confirmation]
+      properties:
+        decision: { type: string, const: approve }
+        rollback_plan_hash: { $ref: '#/components/schemas/Sha256' }
         confirmation:
           type: string
           minLength: 3
           maxLength: 160
-          description: Frase ROLLBACK project_id prefixo-do-hash.
-        preserve_data: { type: boolean, default: true }
+          description: Frase APROVAR ROLLBACK project_id prefixo-do-hash.
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    RollbackRejectRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, reason]
+      properties:
+        decision: { type: string, const: reject }
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    RollbackExecuteRequest:
+      type: object
+      additionalProperties: false
+      required: [rollback_plan_hash, approval_id]
+      properties:
+        rollback_plan_hash: { $ref: '#/components/schemas/Sha256' }
+        approval_id: { type: string, format: uuid }
     OperationResponse:
       type: object
       additionalProperties: false
@@ -522,6 +714,14 @@ components:
         failure:
           oneOf:
             - $ref: '#/components/schemas/SafeFailure'
+            - type: 'null'
+        rollback_plan_hash:
+          oneOf:
+            - $ref: '#/components/schemas/Sha256'
+            - type: 'null'
+        rollback:
+          oneOf:
+            - $ref: '#/components/schemas/RollbackPlan'
             - type: 'null'
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -589,11 +789,61 @@ components:
           maxItems: 20
           uniqueItems: true
           items: { type: string }
+    RollbackPlan:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          rollback_plan_hash,
+          actions,
+          preserve_data,
+          destructive,
+          ownership_verified,
+          observed_revision,
+          expires_at,
+        ]
+      properties:
+        rollback_plan_hash: { $ref: '#/components/schemas/Sha256' }
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/PlannedAction' }
+        preserve_data: { type: boolean }
+        destructive: { type: boolean }
+        ownership_verified: { type: boolean, const: true }
+        observed_revision: { type: string, minLength: 1, maxLength: 128 }
+        approval:
+          oneOf:
+            - $ref: '#/components/schemas/RollbackApproval'
+            - type: 'null'
+        expires_at: { type: string, format: date-time }
+    RollbackApproval:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          approval_id,
+          decision,
+          actor_ref,
+          rollback_plan_hash,
+          decided_at,
+          expires_at,
+        ]
+      properties:
+        approval_id: { type: string, format: uuid }
+        decision: { type: string, enum: [approve, reject] }
+        actor_ref: { type: string, maxLength: 128 }
+        rollback_plan_hash: { $ref: '#/components/schemas/Sha256' }
+        decided_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
     Approval:
       type: object
       additionalProperties: false
-      required: [decision, actor_ref, plan_hash, decided_at, expires_at]
+      required:
+        [approval_id, decision, actor_ref, plan_hash, decided_at, expires_at]
       properties:
+        approval_id: { type: string, format: uuid }
         decision: { type: string, enum: [approve, reject] }
         actor_ref: { type: string, maxLength: 128 }
         plan_hash: { $ref: '#/components/schemas/Sha256' }

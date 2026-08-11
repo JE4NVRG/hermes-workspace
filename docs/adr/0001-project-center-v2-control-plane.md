@@ -3,7 +3,7 @@
 - Status: Proposto
 - Data: 2026-08-11
 - Decisores: Jean / JE4NDEV, Luna, Dev, Security e QA
-- Issues: `JE4NVRG/je4ndev-platform-core#2`, `#5`
+- Issues: `JE4NVRG/je4ndev-platform-core#2`, `#5`, `#12`
 
 ## Contexto
 
@@ -23,6 +23,8 @@ Adotar um control plane baseado em operações declarativas, tipadas, idempotent
 6. Verificação comprova isolamento, least privilege, backup e restore antes de publicar no registry/Platform API.
 7. Falhas geram compensação segura ou estado `manual_intervention_required`.
 8. Auditoria append-only e respostas usam payload sanitizado e secret references opacas.
+9. O OpenAPI é a fonte canônica para o enum e a tabela de transições (`OperationState`), a matriz role → scope → `operationId` (`x-rbac-policy`) e os requisitos por operação (`x-required-scopes`). Outros artefatos apenas projetam esses identificadores.
+10. Rollback usa três fases separadas: dry-run tipado, decisão segregada vinculada ao `rollback_plan_hash` e execute assíncrono com revalidação de drift/ownership.
 
 Drivers iniciais:
 
@@ -72,8 +74,9 @@ Rejeitada por custo e complexidade. `postgresql_isolated` é padrão; `supabase_
 
 ## Controles obrigatórios
 
-- scopes separados e dupla pessoa em produção;
-- `Idempotency-Key`, hash de plano, optimistic version e locks com fencing;
+- roles e scopes canônicos do `x-rbac-policy`, com `default: deny` e dupla pessoa em produção;
+- `Idempotency-Key` gerada/persistida pelo cliente antes da primeira tentativa, hash de plano, optimistic version e locks com fencing;
+- requests de aprovação discriminados por `decision`: aprovação exige hash/confirmação; rejeição exige motivo e não uma frase falsa de aprovação;
 - allowlists versionadas e imagens/templates pinados;
 - secret broker sem retorno de valor;
 - sanitização de erro por catálogo fechado;
@@ -106,3 +109,12 @@ A implementação só pode sair de feature flag quando:
 Implementar em PRs atômicos, começando pelo storage/máquina de estados sem side effects. Ativar primeiro em development, depois staging e por último production. Secrets são instalados pelo operador no secret broker, nunca pelo deploy/repo.
 
 Rollback do software desativa feature flags e workers, preservando operações, outbox e auditoria. Recursos já provisionados não são removidos por rollback de versão; sua compensação usa o contrato de rollback com novo gate.
+
+O gate de compensação não reutiliza a aprovação de provisionamento. Primeiro, `rollback/dry-run` observa ownership e drift e persiste um `RollbackPlan` imutável com `rollback_plan_hash`. Depois, `rollback/approve` exige novo `approval_id`; em rollback destrutivo, o aprovador humano difere do solicitante do rollback e do solicitante original. Por fim, `rollback/execute` revalida hash, aprovação, validade, revision, ownership e policy antes de adquirir lease. Falha em qualquer prova encerra antes do side effect com erro tipado ou `manual_intervention_required`.
+
+## Consequência para contratos e clientes
+
+- SDK/UI gera e persiste `Idempotency-Key` antes do primeiro POST e a reutiliza após timeout; o servidor guarda apenas o hash.
+- Tokens carregam roles/scopes do vocabulário canônico; descrições livres não concedem autorização.
+- Labels de UX podem ser traduzidas, mas não criam aliases de estado no domínio.
+- `ApprovalRequest` e `RollbackApprovalRequest` são `oneOf` discriminados, tornando aprovação e rejeição estruturalmente distintas.
