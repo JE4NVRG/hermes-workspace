@@ -3,7 +3,7 @@
 - Status: Proposto
 - Data: 2026-08-11
 - Decisores: Jean / JE4NDEV, Luna, Dev, Security e QA
-- Issues: `JE4NVRG/je4ndev-platform-core#2`, `#5`, `#12`
+- Issues: `JE4NVRG/je4ndev-platform-core#2`, `#5`, `#12`, `#17`
 
 ## Contexto
 
@@ -25,6 +25,7 @@ Adotar um control plane baseado em operações declarativas, tipadas, idempotent
 8. Auditoria append-only e respostas usam payload sanitizado e secret references opacas.
 9. O OpenAPI é a fonte canônica para o enum e a tabela de transições (`OperationState`), a matriz role → scope → `operationId` (`x-rbac-policy`) e os requisitos por operação (`x-required-scopes`). Outros artefatos apenas projetam esses identificadores.
 10. Rollback usa três fases separadas: dry-run tipado, decisão segregada vinculada ao `rollback_plan_hash` e execute assíncrono com revalidação de drift/ownership.
+11. `SecretRef` é um token opaco, aleatório e emitido exclusivamente pelo secret broker; identidade, finalidade e localização permanecem no binding privado persistido pelo broker, nunca no token.
 
 Drivers iniciais:
 
@@ -78,7 +79,9 @@ Rejeitada por custo e complexidade. `postgresql_isolated` é padrão; `supabase_
 - `Idempotency-Key` gerada/persistida pelo cliente antes da primeira tentativa, hash de plano, optimistic version e locks com fencing;
 - requests de aprovação discriminados por `decision`: aprovação exige hash/confirmação; rejeição exige motivo e não uma frase falsa de aprovação;
 - allowlists versionadas e imagens/templates pinados;
-- secret broker sem retorno de valor;
+- secret broker sem retorno de secret value e com emissão CSPRNG de `SecretRef` opaca;
+- persistência atômica do digest/binding interno da `SecretRef` antes de publicar o artefato;
+- redaction centralizada da `SecretRef` integral em logs, traces, métricas, erros, audit e UI;
 - sanitização de erro por catálogo fechado;
 - ownership marker antes de adoção/rollback;
 - prova negativa de isolamento cruzado;
@@ -91,6 +94,14 @@ Rejeitada por custo e complexidade. `postgresql_isolated` é padrão; `supabase_
 `src/server/supabase-registry.ts` deixa de ser executor de criação. O GET e o adapter de leitura podem permanecer temporariamente para inventário/migração. O POST legado deve ser desativado após o v2 estar disponível. A UI passa a consumir o contrato versionado e acompanhar operações assíncronas.
 
 O `platform_registry` atual não é prova de isolamento. O novo registry registra `driver`, `environment`, `provisioning_generation`, artefatos públicos/scoped, health, backup e referências opacas. A je4ndev Platform API projeta esse estado para agentes sem secrets.
+
+## Decisão de identidade para SecretRef
+
+O broker gera cada `SecretRef` no servidor com prefixo de namespace `sref_` e pelo menos 256 bits de entropia CSPRNG em base64url. O token não contém, codifica ou concatena `project_id`, UUID do projeto, slug, purpose, provider, locator ou path. Não existe algoritmo cliente para construí-lo e nenhuma autorização pode ser inferida por parsing; consumidores tratam a referência como valor atômico.
+
+A emissão só termina após persistência durável e atômica de um registro privado do broker, indexado por digest do token e vinculado internamente ao UUID do projeto, purpose, versão, estado e locator protegido do provider. A operação publica o artefato apenas depois dessa confirmação. Replay idempotente recupera o mesmo registro; rotação emite nova referência aleatória e revoga a anterior conforme política, sem alias determinístico.
+
+O token integral circula apenas em campos tipados necessários entre API, worker e broker. Redaction ocorre antes da serialização de logs, traces, métricas, erros e eventos de auditoria. Observabilidade, UI e suporte recebem somente fingerprint não reversível ou valor mascarado neutro, como `sref_REDACTED_REDACTED_REDACTED_REDACTED_REDACTED`; nunca recebem o binding privado ou o locator.
 
 ## Verificação da decisão
 
