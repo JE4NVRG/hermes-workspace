@@ -1,7 +1,7 @@
 # Project Center v2 — UX do wizard de provisionamento seguro
 
 Status: especificação de discovery; não altera a UI nem autoriza provisionamento real
-Issue: [je4ndev-platform-core#6](https://github.com/JE4NVRG/je4ndev-platform-core/issues/6)
+Issues: [je4ndev-platform-core#6](https://github.com/JE4NVRG/je4ndev-platform-core/issues/6), [#15](https://github.com/JE4NVRG/je4ndev-platform-core/issues/15)
 Issue raiz: [je4ndev-platform-core#2](https://github.com/JE4NVRG/je4ndev-platform-core/issues/2)
 Responsável: Design / Neo
 Data: 2026-08-11
@@ -32,7 +32,7 @@ A interface permanece dark-themed e técnica, mas deve ser entendida sem conheci
 
 1. **Segurança antes de velocidade:** nenhuma ação real existe antes de dry-run válido e aprovação explícita.
 2. **Comparação honesta:** “database isolado”, “stack isolada” e “schema compartilhado” não podem usar a mesma linguagem visual.
-3. **Sem credenciais na UI:** exibir nomes, caminhos mascarados, fingerprints e IDs; nunca senha, token, JWT secret ou DSN real.
+3. **Sem credenciais na UI:** exibir nomes, `secret_ref` opacas, fingerprints e IDs; nunca path absoluto, senha, token, JWT secret ou DSN real.
 4. **Sem sucesso otimista:** concluir apenas após verificações reais e persistidas.
 5. **Falha é estado, não toast:** falhas parciais permanecem visíveis e recuperáveis.
 6. **Ação irreversível é rara e deliberada:** cor, cópia, confirmação e autorização distintas das ações comuns.
@@ -130,14 +130,14 @@ Campos:
 - proprietário operacional;
 - descrição sem dados sensíveis;
 - classificação de sensibilidade;
-- idempotency key gerada pelo control plane, visível parcialmente.
+- `Idempotency-Key` gerada e persistida pelo cliente/SDK antes da primeira tentativa, visível apenas de forma mascarada.
 
 Pré-visualizações derivadas, read-only:
 
 - `project_id`;
 - database `je4ndev_<cliente>_<projeto>`;
 - role `je4ndev_<cliente>_<projeto>_app`;
-- caminho de secret mascarado `/home/jean/.config/je4ndev/projects/<slug>.env`;
+- `secret_ref` opaca e mascarada, por exemplo `secret://projects/<project_id>/d•••••••-url`;
 - diretórios esperados de migrations, schema e rollback.
 
 Validações:
@@ -184,13 +184,13 @@ O estado inicial é um skeleton com texto “Validando contexto, capacidade e co
 - Git/repo e arquivos versionados;
 - database, owner controlado e role app;
 - grants e proibições da role;
-- secret path e permissão `0600`, sempre mascarados;
+- `secret_ref` opaca e estado da proteção do material privado, sem path absoluto;
 - Compose, rede, volumes e serviços quando Supabase completo;
 - bindings locais e domínios planejados;
 - backup local, R2, restore test e monitoramento;
 - verificações e ações compensatórias de rollback.
 
-Cada item possui `Criar`, `Reutilizar`, `Sem alteração`, `Conflito` ou `Bloqueado`. O plano mostra `plan_id`, `idempotency_key`, hash, validade e timestamp. Repetir o dry-run com o mesmo contexto deve produzir o mesmo plano ou explicar o drift.
+Cada item possui `Criar`, `Reutilizar`, `Sem alteração`, `Conflito` ou `Bloqueado`. O plano mostra `plan_id`, `Idempotency-Key` mascarada, hash, validade e timestamp. Antes do primeiro POST, o cliente/SDK gera e persiste a chave de 16–128 caracteres; após timeout sem resposta, reutiliza a mesma chave. O servidor persiste apenas `idempotency_key_hash`, e `operation_id`/`request_id` gerados pelo servidor nunca substituem a chave do cliente. Repetir o dry-run com a mesma intenção usa a mesma chave e deve recuperar o plano original; alterar a intenção cria e persiste uma nova chave antes da nova tentativa.
 
 Gates automáticos mínimos:
 
@@ -240,14 +240,14 @@ Resumo fixo:
 - hash e validade do dry-run;
 - aprovador exigido por policy.
 
-A aprovação não executa. Ela cria um registro `pending_approval`, e apenas Luna/Jean/admin com escopo adequado pode aprovar side effects. O solicitante sem permissão vê estado **Aguardando aprovador**, não um botão falso.
+A aprovação não executa. A solicitação leva a operação ao estado canônico `awaiting_approval`, e apenas uma identidade com role `project_approver` e scope `project:approve` pode decidir. Em produção, o aprovador é humano, diferente do solicitante, e token de agente não aprova. O solicitante sem permissão vê **Aguardando aprovação**, não um botão falso.
 
-Ao aprovar, registrar ator, role, timestamp, razão, hash do plano e expiração. Qualquer alteração de Contexto/Recursos ou drift do dry-run invalida a aprovação.
+Ao aprovar, o ramo `decision=approve` exige `plan_hash` e a frase `APROVAR <project_id> <prefixo-do-hash>`; razão é opcional. Ao rejeitar, o ramo `decision=reject` exige motivo de 3–500 caracteres e não mostra, solicita nem envia `plan_hash` ou frase de aprovação. Registrar ator, role, timestamp, decisão, motivo quando aplicável, hash apenas da aprovação e expiração. Qualquer alteração de Contexto/Recursos ou drift do dry-run invalida a aprovação.
 
 CTAs conforme permissão:
 
 - solicitante: **Enviar para aprovação**;
-- aprovador: **Aprovar plano** ou **Rejeitar com motivo**;
+- aprovador: **Aprovar plano** abre a confirmação vinculada ao hash; **Rejeitar com motivo** abre um formulário distinto com motivo obrigatório;
 - sem permissão: nenhum CTA de execução.
 
 ## 5.6 Execução
@@ -267,7 +267,7 @@ Requisitos da confirmação:
 - CTA vermelho/âmbar com verbo e objeto: **Provisionar infraestrutura**;
 - cancelar continua seguro até o job ser aceito.
 
-Depois do aceite, a UI mostra timeline por etapa com `pending`, `running`, `succeeded`, `failed`, `compensating`, `rolled_back` ou `needs_recovery`:
+Depois do aceite, a UI mostra a timeline por etapa. Seus rótulos são projeções dos estados canônicos de `OperationState`; não criam aliases como `pending`, `running`, `compensating` ou `needs_recovery` no domínio:
 
 - preparar operação/idempotência;
 - criar infraestrutura;
@@ -305,7 +305,13 @@ CTAs: **Abrir projeto** apenas após PASS; **Ver detalhes da operação** sempre
 
 **Objetivo:** tornar explícito o que pode ser revertido, compensado ou exige decisão humana.
 
-O plano existe desde o dry-run, mas a etapa final mostra seu estado real:
+O dry-run de provisionamento antecipa ações compensatórias, mas qualquer rollback real segue um contrato próprio em três fases e gera um `rollback_plan_hash` diferente do `plan_hash` original:
+
+1. **Planejar rollback:** `rollback/dry-run` exige motivo e `preserve_data`, observa ownership/drift e persiste um `RollbackPlan` imutável sem side effects. A UI mostra ações, `destructive`, `ownership_verified`, `observed_revision`, validade e `rollback_plan_hash` mascarado.
+2. **Decidir rollback:** `rollback/approve` usa uma aprovação nova, separada da aprovação de provisionamento e vinculada ao `rollback_plan_hash`. `decision=approve` exige a frase `APROVAR ROLLBACK <project_id> <prefixo-do-hash>`; `decision=reject` exige apenas motivo e nunca reutiliza a frase de aprovação. Em rollback destrutivo, o aprovador humano difere do solicitante do rollback e do solicitante da operação original.
+3. **Executar rollback:** `rollback/execute` recebe `rollback_plan_hash` e o novo `approval_id`, revalida validade, revision, ownership, drift e policy e só então enfileira a compensação. Plano ou aprovação alterados/expirados bloqueiam antes de qualquer side effect.
+
+A etapa final mostra o estado real:
 
 - **Não necessário:** verificação passou;
 - **Disponível:** operação concluída, rollback ainda possível;
@@ -326,9 +332,33 @@ A confirmação irreversível para destruição deve usar:
 
 `EXCLUIR <resource_id> SEM RECUPERAÇÃO`
 
-Ela exige motivo, segundo gate conforme policy, backup/restore test válido ou exceção formal e lista dos artefatos que serão destruídos. Um rollback nunca toca recurso preexistente sem prova de ownership pelo `operation_id`.
+Essa frase comunica a consequência final na confirmação destrutiva, mas não substitui a frase contratual de aprovação vinculada ao hash. A ação exige motivo no dry-run, plano destrutivo persistido, aprovação segregada, backup/restore test válido ou exceção formal e lista dos artefatos que serão destruídos. Um rollback nunca toca recurso preexistente sem prova de ownership pelo `operation_id`.
 
 ## 6. Modelo de estados e recuperação
+
+### Projeção explícita do enum canônico
+
+`components.schemas.OperationState` e `x-allowed-transitions` no OpenAPI são a única fonte de verdade. A UX traduz os valores sem alterar payloads, filtros, auditoria ou regras de transição:
+
+| Estado canônico                | Label na UI                   | Tratamento visual/ação principal                                 |
+| ------------------------------ | ----------------------------- | ---------------------------------------------------------------- |
+| `planned`                      | Plano gerado                  | Revisar plano e segurança                                        |
+| `awaiting_approval`            | Aguardando aprovação          | Aprovador decide; solicitante acompanha                          |
+| `approved`                     | Plano aprovado                | Executar dentro da validade                                      |
+| `queued`                       | Execução na fila              | Acompanhar; não reenviar                                         |
+| `executing`                    | Provisionando                 | Timeline ativa e saída em segundo plano                          |
+| `verifying`                    | Verificando isolamento        | Evidências parciais, sem declarar sucesso                        |
+| `succeeded`                    | Provisionamento verificado    | Abrir projeto e relatório                                        |
+| `failed`                       | Falha recuperável             | Diagnosticar e repetir de forma idempotente ou planejar rollback |
+| `rollback_pending`             | Rollback aguardando execução  | Revisar plano/hash e aprovação próprios                          |
+| `rolling_back`                 | Executando rollback           | Timeline de compensação, sem nova criação                        |
+| `rolled_back`                  | Rollback concluído            | Mostrar prova de compensação e auditoria                         |
+| `manual_intervention_required` | Intervenção manual necessária | Bloquear automação, mostrar diagnóstico e escalonamento          |
+| `rejected`                     | Plano rejeitado               | Mostrar motivo; corrigir intenção e gerar nova chave/plano       |
+| `expired`                      | Plano expirado                | Regenerar plano e solicitar nova aprovação                       |
+| `cancelled`                    | Operação cancelada            | Exibir ator/motivo; nenhum side effect posterior                 |
+
+As transições exibidas devem ser aceitas pelo `x-allowed-transitions`; por exemplo, a recuperação de `failed` pode voltar a `queued` ou seguir a `rollback_pending`, e conflito que não permite prova segura termina em `manual_intervention_required`. Labels do stepper como “válido”, “bloqueado” e “atual” são estados de apresentação da etapa, não valores de `OperationState`.
 
 | Estado de UX    | O que mostrar                                                                                      | Ação permitida                                               | O que não fazer                                        |
 | --------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
@@ -346,7 +376,7 @@ Ela exige motivo, segundo gate conforme policy, backup/restore test válido ou e
 - O botão de execução é desabilitado após aceite e substituído pelo estado do job.
 - Retry usa a mesma idempotency key quando a intenção não mudou.
 - Alterar intenção cria novo plano e nova chave.
-- Conflito entre estado esperado e real vira `needs_recovery`; nunca deve ser resolvido por nova criação automática.
+- Conflito recuperável permanece `failed` até retry idempotente ou `rollback_pending`; conflito sem prova segura vai para `manual_intervention_required`. Nunca criar o alias de domínio `needs_recovery` nem resolver por nova criação automática.
 - Toast é apenas aviso transitório; o estado persistente vive na página e na auditoria.
 
 ## 7. Auditoria
@@ -354,7 +384,7 @@ Ela exige motivo, segundo gate conforme policy, backup/restore test válido ou e
 Cada operação expõe um painel **Trilha de auditoria** com:
 
 - `request_id`, `plan_id`, `approval_id` e `operation_id`;
-- projeto, ambiente, modo e idempotency key mascarada;
+- projeto, ambiente, modo e `Idempotency-Key` mascarada; o valor bruto nunca entra em auditoria;
 - evento, ator/role, timestamp e origem;
 - hash do plano aprovado;
 - recursos afetados por ID não sensível;
@@ -400,7 +430,7 @@ Evitar:
 - “sem custo” quando apenas não há container novo;
 - “rollback automático” quando existe possibilidade de compensação parcial;
 - “erro desconhecido” sem `operation_id`, próximo passo e ação de suporte;
-- nomes de secret, senhas, tokens ou comandos administrativos.
+- paths absolutos, nomes privados de secret, senhas, tokens ou comandos administrativos.
 
 ### Cópias críticas
 
@@ -489,6 +519,16 @@ Métricas:
 - `docs/je4ndev-platform-api.md`: dry-run e approval de side effects.
 - `src/server/supabase-registry.ts`: comportamento atual de criação de schema compartilhado e gate `CRIAR <slug>`.
 - `src/screens/supabase/supabase-projects-screen.tsx`: UI atual que será substituída/evoluída em fase futura.
-- `/home/jean/maximo-supabase/docker-compose.yml` e override: baseline de 14 containers da stack isolada Máximo.
+- inventário sanitizado da stack isolada Máximo: baseline observado de 14 containers; a origem operacional privada não é exibida na UI.
 
 A UX aqui descrita não valida a arquitetura por si só. Ela torna decisões, gates e evidências visíveis; o backend continua responsável por autorização, idempotência, redaction, ownership, rollback e provas reais de isolamento.
+
+## 14. Rastreabilidade do alinhamento contratual
+
+| Achado      | Correção nesta UX                                                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PCV2-QA-001 | tabela explícita `OperationState` → label; aliases de apresentação não são enviados ao domínio e transições vêm de `x-allowed-transitions`       |
+| PCV2-QA-002 | rollback separado em dry-run, aprovação por `rollback_plan_hash` e execute com novo `approval_id` e segregação destrutiva                        |
+| PCV2-QA-005 | `Idempotency-Key` criada/persistida pelo cliente/SDK antes do primeiro POST, reutilizada após timeout e armazenada no servidor somente como hash |
+| PCV2-QA-006 | approve exige hash/frase; reject usa formulário separado, exige motivo e não solicita nem envia frase de aprovação                               |
+| Segurança   | path absoluto removido da superfície; a UI exibe apenas `secret_ref` opaca/mascarada e estado sanitizado                                         |
