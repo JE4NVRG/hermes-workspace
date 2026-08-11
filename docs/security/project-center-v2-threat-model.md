@@ -6,7 +6,9 @@
 
 **Fora de escopo:** alterar banco, roles, secrets, Docker, Nginx, DNS, Cloudflare, systemd ou produção
 
-**Referências:** issue raiz JE4NVRG/je4ndev-platform-core#2; issue de segurança #4; brief `project-center-v2-20260811/ISSUE.md`; `CONSTITUTION.md`; `docs/database-provisioning.md`; `docs/supabase-replacement.md`; `docs/je4ndev-platform-api.md`
+**Referências:** issue raiz JE4NVRG/je4ndev-platform-core#2; issue de segurança #4; correção de segurança #14; brief `project-center-v2-20260811/ISSUE.md`; contrato canônico `specs/contracts/project-center-v2.openapi.yaml` no PR #2; `CONSTITUTION.md`; `docs/database-provisioning.md`; `docs/supabase-replacement.md`; `docs/je4ndev-platform-api.md`
+
+O OpenAPI do PR #2 é a fonte canônica para `OperationState.x-allowed-transitions`, `x-rbac-policy`, `x-required-scopes`, endpoints, schemas e códigos de erro. Este threat model projeta esses identificadores sem criar aliases. A identidade de segurança dos recursos continua sendo o `project_uuid` imutável mantido no registro server-side; nomes derivados de `client_id`/`project_slug` são aliases operacionais, nunca a chave de ownership. A API/UI só expõe referências de secret opacas, nunca o path físico.
 
 ## 1. Veredito executivo
 
@@ -60,7 +62,7 @@ Operador/Agente
       v
 Project Center API (sem credencial admin e sem Docker socket)
       |
-      | plano imutável + approval_id + plan_hash + capability curta
+      | plano imutável + approval_id + plan_hash/rollback_plan_hash + capability curta
       v
 Fila/IPC autenticado e allowlisted
       |
@@ -72,7 +74,7 @@ PostgreSQL 16   Docker rootless    R2 por prefixo    Secret store 0600
 (loopback)      (stack isolada)    + policy scoped   fora do repo
 ```
 
-A API pública nunca deve executar `psql`, `docker compose`, shell ou operações R2 diretamente. O provisionador não recebe request arbitrário: recebe somente um plano validado, versionado, aprovado, dentro de uma allowlist de operações. A credencial de aprovação é single-use, expira rapidamente e está vinculada a `actor`, `project_id`, `mode`, `plan_hash` e `idempotency_key`.
+A API pública nunca deve executar `psql`, `docker compose`, shell ou operações R2 diretamente. O provisionador não recebe request arbitrário: recebe somente um plano validado, versionado, aprovado, dentro de uma allowlist de operações. A credencial de aprovação é single-use, expira rapidamente e está vinculada a `actor_ref`, `project_uuid`, `driver`, ao `plan_hash` ou `rollback_plan_hash` exato e ao hash da `Idempotency-Key` client-owned.
 
 ### 3.1 Trust boundaries
 
@@ -91,19 +93,17 @@ A API pública nunca deve executar `psql`, `docker compose`, shell ou operaçõe
 
 ## 4. Identidades, roles e segregação de funções
 
-### 4.1 Roles do control plane
+### 4.1 Roles e scopes canônicos do control plane
 
-| Papel | Permitido | Explicitamente proibido |
-|---|---|---|
-| `agent:read` | contexto e schema mascarado do projeto autorizado | secrets, DDL, Docker, R2, aprovação |
-| `agent:write-task` | claim/handoff no projeto autorizado | provisionar ou aprovar |
-| `agent:write-migration` | propor migration via Git | aplicar migration ou obter DSN real |
-| `operator:plan` | criar dry-run e solicitar aprovação | executar side effects sozinho |
-| `approver:execute` | aprovar plano revisado | alterar o plano após aprovação |
-| `provisioner` | executar operações allowlisted do plano | login interativo, API geral, conteúdo arbitrário |
-| `auditor` | metadados e audit trail redigido | secret material ou side effects |
+| Role canônica | Scopes canônicos | `operationId` canônicos | Explicitamente proibido |
+|---|---|---|---|
+| `project_reader` | `project:read` | `getProjectOperation` | secrets, audit privilegiado e side effects |
+| `project_operator` | `project:plan`, `project:execute`, `project:verify`, `project:rollback` | `createProjectDryRun`, `executeProjectOperation`, `verifyProjectOperation`, `createProjectRollbackDryRun`, `executeProjectRollback` | aprovar a própria operação ou enviar comandos livres |
+| `project_approver` | `project:approve` | `decideProjectOperationApproval`, `decideProjectRollbackApproval` | alterar plano, executar worker ou aprovar como token de agente |
+| `project_auditor` | `project:audit` | `listProjectOperationAudit` | secret material ou side effects |
+| `platform_worker` | `project:worker` | nenhuma operação HTTP pública; somente consumo interno | login interativo, API geral ou conteúdo arbitrário |
 
-Nenhum agente possui `approver:execute`, credencial administrativa PostgreSQL, acesso ao Docker socket ou credencial R2 global. Em produção deve haver segregação entre solicitante e aprovador para operações destrutivas e `supabase_isolated`.
+O mapeamento role → scope → `operationId` e cada `x-required-scopes` pertencem ao `x-rbac-policy` do OpenAPI e usam `default: deny` em todos os ambientes. Nenhum agente possui `project:approve`, credencial administrativa PostgreSQL, acesso ao Docker socket ou credencial R2 global. Em produção, o aprovador deve ser humano e diferente do solicitante. Em rollback destrutivo, também deve diferir do solicitante da operação original; a autorização é revalidada em `execute` e `rollback/execute`.
 
 ### 4.2 Role PostgreSQL da aplicação
 
@@ -127,11 +127,11 @@ Cada invariante deve virar constraint, teste e evidência operacional.
 
 ### I-01 — Escopo canônico
 
-`client_id`, `project_id` e `mode` vêm da autorização e do registro server-side. O cliente não pode selecionar outro tenant apenas alterando path, query, body, header, cookie ou idempotency key.
+`client_id`, `project_uuid`, alias público do projeto e `driver` vêm da autorização e do registro server-side. O cliente não pode selecionar outro tenant apenas alterando path, query, body, header, cookie ou `Idempotency-Key`. Toda consulta por alias resolve primeiro para o UUID imutável dentro do escopo autorizado.
 
 ### I-02 — Naming seguro
 
-Slugs aceitam apenas ASCII lowercase conforme regex estrita e são normalizados uma única vez. Database, role, Compose project, network, volume, data path e prefixo R2 são derivados de um `project_uuid` imutável mais slug canônico. Texto livre nunca vira identifier, path, argumento de processo ou nome R2.
+Slugs aceitam apenas ASCII lowercase conforme regex estrita e são normalizados uma única vez. Database, role, Compose project, network, volume, data path e prefixo R2 são derivados de um `project_uuid` imutável mais slug canônico. Renomear ou reciclar slug não altera ownership. Texto livre nunca vira identifier, path, argumento de processo ou nome R2.
 
 ### I-03 — Dry-run sem side effect
 
@@ -139,7 +139,7 @@ Slugs aceitam apenas ASCII lowercase conforme regex estrita e são normalizados 
 
 ### I-04 — Aprovação vinculada
 
-A execução aceita somente uma aprovação single-use, não expirada, emitida para o mesmo actor/project/mode/plan hash/idempotency key. Qualquer mudança no plano invalida a aprovação. Repetição retorna o resultado anterior, não reexecuta.
+A execução aceita somente uma aprovação single-use, não expirada, emitida para o mesmo `actor_ref`/`project_uuid`/`driver`/`plan_hash`/hash de `Idempotency-Key`. Qualquer mudança no plano invalida a aprovação. Aprovação e rejeição são ramos discriminados por `decision`: `approve` exige hash e confirmação; `reject` exige motivo e nunca uma frase de aprovação. Repetição equivalente retorna o resultado anterior, não reexecuta.
 
 ### I-05 — Default deny
 
@@ -155,7 +155,7 @@ Cada stack possui Compose project, rede, Postgres/data path, volumes, JWT secret
 
 ### I-08 — Secrets não observáveis
 
-Nenhuma resposta, UI, log, trace, erro, audit event, shell history, process argv, Git diff, PR, Kanban ou prompt contém senha, DSN real, JWT secret, service key ou credencial R2. Representações mascaradas não preservam tamanho ou prefixo útil além do necessário.
+Nenhuma resposta, UI, log, trace, erro, audit event, shell history, process argv, Git diff, PR, Kanban ou prompt contém senha, DSN real, JWT secret, service key, credencial R2 ou path físico do secret. API/UI recebem apenas `secret_ref` opaca, como `secret://projects/<project-uuid>/<purpose>`. Representações mascaradas não preservam tamanho ou prefixo útil além do necessário.
 
 ### I-09 — Filesystem confinado
 
@@ -163,7 +163,7 @@ Todos os paths são resolvidos sob raízes fixas por project UUID; `realpath`/op
 
 ### I-10 — Idempotência e serialização
 
-Há constraint única para `(project_id, operation_type, idempotency_key)`, fingerprint do payload e lock por projeto. Mesma key + mesmo fingerprint retorna o resultado persistido; mesma key + payload diferente retorna conflito. Operações concorrentes incompatíveis são rejeitadas/serializadas.
+A `Idempotency-Key` é gerada e persistida pelo cliente/SDK antes da primeira tentativa, inclusive o primeiro POST, e reutilizada após timeout. O servidor armazena somente seu hash e aplica unicidade por ator + método + route template + request hash canônico, com lock por `project_uuid`. Mesma key + mesmo payload retorna o resultado persistido; mesma key + payload diferente retorna `409 IDEMPOTENCY_KEY_REUSED`. IDs internos server-owned não substituem essa chave. Operações concorrentes incompatíveis são rejeitadas/serializadas.
 
 ### I-11 — Falha parcial reconciliável
 
@@ -175,7 +175,7 @@ Backup inclui manifesto com project UUID, database/stack ID, timestamp, schema/v
 
 ### I-13 — Auditoria não repudiável
 
-Eventos registram actor ID, project ID, ação, plan hash, approval ID, idempotency key, transições, resultado redigido e correlation ID. Não registram secrets. Logs de auditoria são append-only, com acesso restrito e relógio confiável.
+Eventos registram `actor_ref`, `project_uuid`, ação, `plan_hash` ou `rollback_plan_hash`, `approval_id`, somente o hash da `Idempotency-Key`, transições canônicas, resultado redigido e correlation ID. Não registram secrets nem paths físicos. Logs de auditoria são append-only, com acesso restrito e relógio confiável.
 
 ### I-14 — Legado compartilhado não expande
 
@@ -186,7 +186,7 @@ Eventos registram actor ID, project ID, ação, plan hash, approval ID, idempote
 | STRIDE | Componente | Cenário/prova de explorabilidade | Severidade | Mitigação/verificação |
 |---|---|---|---|---|
 | Spoofing | API | Sessão comum chama endpoint administrativo; atualmente `isAuthenticated` não distingue papéis e permite acesso quando nenhuma senha está configurada | **Crítica** | auth fail-closed, identidade forte, RBAC/ABAC por rota e projeto; testes sem config/sem role/role errada = 401/403 sem side effect |
-| Spoofing | Approval | Reuso/roubo de `approval_id` executa outro plano | **Crítica** | token single-use curto e vinculado a plan hash/actor/project/idempotency; teste de replay e troca de campo |
+| Spoofing | Approval | Reuso/roubo de `approval_id` executa outro plano | **Crítica** | token single-use curto e vinculado ao hash exato/actor/project UUID/hash de idempotência; teste de replay e troca de campo |
 | Tampering | Identifiers/SQL | slug/schema/path malicioso altera SQL ou escapa diretório | **Crítica** | schema estrito, derivação server-side, driver parametrizado, quoting seguro e path confinement; fuzz de quotes, Unicode, separators, NUL e `..` |
 | Tampering | Plan | Payload muda depois da aprovação | **Crítica** | plano canônico imutável e hash; provisionador recalcula e compara antes de cada execução |
 | Repudiation | Control plane | Operador nega criação/rotação/restore | **Alta** | audit append-only com identidade, aprovação e hashes; correlação ponta a ponta |
@@ -215,7 +215,7 @@ Estas constatações justificam o NO-GO; não autorizam correções de produçã
 
 **Exploitabilidade:** qualquer sessão Workspace — ou qualquer request quando a senha não está configurada — pode emitir o POST que chega ao executor DDL.
 
-**Remediação exigida:** endpoint v2 fail-closed, autorização `operator:plan`/`approver:execute`, CSRF/content-type/rate limit e provisionador separado. Remover execução real do endpoint legado.
+**Remediação exigida:** endpoint v2 fail-closed, `project_operator` + `project:plan` para dry-run e `project_approver` + `project:approve` para decisão, CSRF/content-type/rate limit e provisionador separado. Remover execução real do endpoint legado.
 
 ### TM-02 — API web acoplada a credenciais equivalentes a admin
 
@@ -279,29 +279,41 @@ Estas constatações justificam o NO-GO; não autorizam correções de produçã
 
 ## 9. Idempotência, concorrência e rollback parcial
 
-### 9.1 Máquina de estados mínima
+### 9.1 Máquina de estados canônica
 
 ```text
-DRAFT -> PLANNED -> AWAITING_APPROVAL -> APPROVED -> EXECUTING
-                                              |          |
-                                              |          +-> SUCCEEDED
-                                              |          +-> NEEDS_RECONCILE
-                                              |          +-> FAILED_ROLLED_BACK
-                                              +-> EXPIRED/CANCELLED
+planned -> awaiting_approval
+awaiting_approval -> approved | rejected | expired | cancelled
+approved -> queued | expired | cancelled
+queued -> executing | approved
+executing -> verifying | failed | rollback_pending | manual_intervention_required
+verifying -> succeeded | rollback_pending | manual_intervention_required
+failed -> queued | rollback_pending
+succeeded -> rollback_pending
+rollback_pending -> rolling_back
+rolling_back -> rolled_back | manual_intervention_required
 ```
 
-Transições usam compare-and-swap/version. Só `APPROVED` entra em execução; `SUCCEEDED` é terminal. `NEEDS_RECONCILE` bloqueia novas mutações do projeto até inspeção/reconciliação.
+Essa tabela é uma projeção exata de `OperationState.x-allowed-transitions`; qualquer mudança deve começar no OpenAPI. Transições usam compare-and-swap/`operation_version`. `rolled_back`, `manual_intervention_required`, `rejected`, `expired` e `cancelled` são terminais. `succeeded` admite apenas rollback explícito pela política. `manual_intervention_required` bloqueia novas mutações do projeto até inspeção/reconciliação.
 
 ### 9.2 Contrato de idempotência
 
-- key aleatória com entropia suficiente, escopo por projeto/operação e retenção maior que o maior retry esperado;
-- fingerprint canônico inclui mode e todos os campos semanticamente relevantes;
+- key aleatória client-owned, persistida antes da primeira tentativa, com entropia suficiente e retenção de 24 horas;
+- fingerprint canônico inclui `driver`, ambiente e todos os campos semanticamente relevantes;
 - mesma key/fingerprint retorna status/resultado anterior;
-- mesma key/fingerprint diferente retorna `409 IDEMPOTENCY_CONFLICT`;
+- mesma key com fingerprint diferente retorna `409 IDEMPOTENCY_KEY_REUSED`;
 - lock por project UUID cobre preflight, side effects, verificação e journal;
 - cada recurso recebe ownership tag/manifest `{project_uuid, operation_id, plan_hash}`.
 
-### 9.3 Saga e compensações
+### 9.3 Rollback em três gates
+
+1. `rollback/dry-run` observa ownership e drift sem side effect e persiste `RollbackPlan`, `observed_revision`, expiração, classificação destrutiva e `rollback_plan_hash` próprios.
+2. `rollback/approve` recebe `RollbackApprovalRequest` discriminado por `decision`. Aprovação exige o hash exato e produz novo `approval_id`; rejeição exige motivo. A aprovação de provisionamento nunca é reutilizada.
+3. `rollback/execute` revalida `approval_id`, `rollback_plan_hash`, validade, revisão observada, ownership, policy e segregação antes de adquirir lease ou produzir side effect.
+
+Em produção e para ação destrutiva, o aprovador humano deve diferir do solicitante do rollback e do solicitante original. Falha de ownership/drift ou aprovação resulta em erro tipado ou `manual_intervention_required`, nunca em compensação especulativa.
+
+### 9.4 Saga e compensações
 
 | Etapa | Postcondição | Compensação permitida |
 |---|---|---|
@@ -313,7 +325,7 @@ Transições usam compare-and-swap/version. Só `APPROVED` entra em execução; 
 | Publicar runtime | app usa credencial nova e health passa | voltar à versão anterior ainda válida |
 | Finalizar | evidências persistidas e secrets redigidos | não aplicável |
 
-Compensação nunca tenta “adivinhar” estado. Falha de compensação gera `NEEDS_RECONCILE`, alerta e bloqueio; não continua nem declara sucesso parcial.
+Compensação nunca tenta “adivinhar” estado. Falha de compensação gera `manual_intervention_required`, alerta e bloqueio; não continua nem declara sucesso parcial.
 
 ## 10. Lifecycle de secrets
 
@@ -325,7 +337,7 @@ Compensação nunca tenta “adivinhar” estado. Falha de compensação gera `N
 
 ### 10.2 Armazenamento
 
-- caminho canônico `/home/jean/.config/je4ndev/projects/<project-uuid>.env` (slug apenas como metadado), diretório 0700 e arquivo 0600;
+- path físico canônico por `<project-uuid>` (slug apenas como metadado), fora do repo, em diretório 0700 e arquivo 0600; o path concreto é detalhe privado do secret broker e não faz parte do contrato público;
 - escrita atômica, no-follow, owner `jean`/runtime dedicado e backup apenas se cifrado e explicitamente necessário;
 - preferir secret manager/credentials do systemd ou Docker secrets; arquivo env é baseline mínimo, não autorização para expor env ao agente;
 - nunca versionar, anexar ao Kanban, incluir em PR, copiar para UI ou retornar por API.
@@ -368,15 +380,20 @@ Injetar canary secrets conhecidos em fixtures isoladas e provar ausência em res
 | ID | Teste | Resultado obrigatório |
 |---|---|---|
 | API-01 | sem senha/provider/RBAC configurado | 401/503 fail-closed; zero side effect |
-| API-02 | sessão válida sem `operator:plan` | 403; zero side effect |
-| API-03 | operador A usa `project_id` B em path/body/query | 403/404 uniforme; nenhum metadata B |
+| API-02 | sessão válida sem role `project_operator` ou scope `project:plan` | 403; zero side effect |
+| API-03 | operador A usa alias ou `project_uuid` B em path/body/query | 403/404 uniforme; nenhum metadata B |
 | API-04 | content type form/text, origin hostil, CSRF e body oversized | rejeição antes de parse/side effect |
 | API-05 | approval expirada, usada, de outro actor/projeto ou plan hash | rejeição; audit event redigido |
 | API-06 | mesma idempotency key, mesmo payload, N retries concorrentes | um side effect; mesmo resultado |
-| API-07 | mesma key com payload diferente | 409; nenhuma segunda execução |
+| API-07 | key client-owned criada antes do primeiro POST; mesma key com payload diferente | replay seguro no primeiro caso; `409 IDEMPOTENCY_KEY_REUSED` no segundo; nenhuma segunda execução |
 | API-08 | slugs com quotes, `..`, slash, backslash, NUL, Unicode confusável e encoding duplo | 400; nenhum SQL/path/process iniciado |
 | API-09 | canary secret em erro de dependência | resposta/log/audit sem canary/DSN/argv/stack |
 | API-10 | flood de planos/execuções | rate limit/quota; fila e host permanecem saudáveis |
+| API-11 | alias/slug A reciclado ou enviado com `project_uuid` B | 403/409; ownership e recursos continuam vinculados ao UUID original |
+| API-12 | resposta/status/erro/audit de operação com secret criado | somente `secret_ref` opaca; nenhum valor ou path físico |
+| API-13 | approve e reject de provisionamento/rollback | ramos `oneOf` discriminados; approve exige hash/confirmação, reject exige motivo |
+| API-14 | rollback dry-run/approve/execute com hash, ator ou revisão trocados | rejeição antes do lease e de qualquer side effect |
+| API-15 | token sem scope requerido chama cada `operationId` | 403 uniforme conforme `x-rbac-policy`; zero side effect |
 
 ### 12.2 PostgreSQL A × B
 
@@ -430,8 +447,12 @@ Qualquer item aberto mantém o sistema em **NO-GO**:
 - [ ] Processo web sem Docker socket, credencial `postgres`, credencial R2 global ou leitura de secrets reais.
 - [ ] Provisionador dedicado, sandboxed e limitado a templates/ações allowlisted.
 - [ ] Dry-run comprovadamente sem side effects e approval vinculada ao `plan_hash`.
+- [ ] Estados/transições e role → scope → `operationId` idênticos ao OpenAPI canônico, sem aliases locais.
+- [ ] `project_uuid` imutável governa ownership; API/UI expõem somente `secret_ref` opaca, sem path físico.
 - [ ] Idempotency store durável, fingerprint, lock por projeto e testes de concorrência.
-- [ ] Saga/journal, compensações com ownership e caminho `NEEDS_RECONCILE` testados.
+- [ ] `Idempotency-Key` client-owned persiste antes do primeiro POST e approve/reject são schemas discriminados.
+- [ ] Saga/journal, compensações com ownership e caminho `manual_intervention_required` testados.
+- [ ] Rollback dry-run/approve/execute usa `rollback_plan_hash`, aprovação nova e segundo ator quando destrutivo.
 - [ ] Role app/migration sem privilégios administrativos; PostgreSQL apenas loopback.
 - [ ] Testes reais PG A × B completos, incluindo CONNECT, DDL admin e cross-role.
 - [ ] Testes reais stack A × B completos para rede, keys, Auth, Storage, volumes e teardown.
@@ -446,6 +467,17 @@ Qualquer item aberto mantém o sistema em **NO-GO**:
 
 Drop database/role/volume/stack, restore em produção, rotação de signing key e revogação de credencial exigem: backup recente verificado, inventário de dependências, preview explícito, aprovação de segundo ator, delay/cancel window quando aplicável e confirmação server-side vinculada ao resource UUID — nunca apenas nome digitado.
 
-## 14. Critério de saída da discovery
+## 14. Rastreabilidade dos achados QA
+
+| Achado | Alinhamento neste threat model |
+|---|---|
+| `PCV2-QA-001` | seção 9.1 projeta exatamente o enum/transições de `OperationState.x-allowed-transitions` e remove aliases locais |
+| `PCV2-QA-002` | seção 9.3 exige rollback dry-run/approve/execute, hash próprio, approval nova, drift/ownership e segundo ator |
+| `PCV2-QA-003` | invariantes I-01, I-02 e I-08 vinculam ownership ao `project_uuid` imutável e expõem somente `secret_ref` opaca |
+| `PCV2-QA-004` | seção 4.1 usa roles/scopes do `x-rbac-policy` e referencia `x-required-scopes` como fonte contratual |
+| `PCV2-QA-005` | I-10 e seção 9.2 tornam a `Idempotency-Key` client-owned antes do primeiro request; servidor persiste somente hash |
+| `PCV2-QA-006` | I-04 e testes API-13 exigem `oneOf` discriminado para approve/reject de provisionamento e rollback |
+
+## 15. Critério de saída da discovery
 
 A discovery termina quando PRD, threat model, spec/OpenAPI e UX usam os mesmos nomes, estados, roles, códigos de erro e gates; os testes acima estão rastreados em um plano executável; e o NO-GO está visível na API/UI. Isso **não** concede GO operacional. O GO só pode ser emitido após implementação em ambiente de teste, evidência real A × B, revisão Security/QA e aprovação explícita para cada rollout.
