@@ -1,7 +1,7 @@
 # Project Center v2 — Especificação técnica
 
 - Status: proposta executável para Gate 3/4
-- Issues: `JE4NVRG/je4ndev-platform-core#5`, `#12`
+- Issues: `JE4NVRG/je4ndev-platform-core#5`, `#12`, `#17`
 - Contrato HTTP: `specs/contracts/project-center-v2.openapi.yaml`
 - Decisão arquitetural: `docs/adr/0001-project-center-v2-control-plane.md`
 
@@ -63,28 +63,32 @@ Registro imutável de intenção e plano, mais estado mutável controlado:
 - plano tipado e hash SHA-256;
 - estado, versão otimista e timestamps;
 - approval, attempts, verificação, rollback e referências de auditoria;
-- resultado sanitizado contendo apenas nomes, estados, IDs públicos/scoped e secret references opacas.
+- resultado sanitizado contendo apenas nomes, estados, IDs públicos/scoped e `SecretRef` opacas emitidas pelo broker.
 
 ### 3.3 ArtifactRef
 
 Artefatos retornados são referências, nunca conteúdo sensível. Tipos permitidos: `database`, `app_role`, `compose_project`, `network`, `data_store`, `secret_ref`, `backup_policy`, `r2_prefix`, `restore_test`, `registry_record`, `platform_context`, `endpoint_masked`.
 
-`secret_ref` usa identificador opaco como `secret://projects/<project_id>/database-url`; a API não expõe path absoluto, senha, DSN real, JWT secret, service-role key ou conteúdo de `.env`.
+Quando `ArtifactRef.type = secret_ref`, `ArtifactRef.ref` é uma `SecretRef` emitida exclusivamente pelo secret broker. O token tem prefixo de namespace `sref_` e pelo menos 256 bits de entropia CSPRNG codificados em base64url; não contém, codifica nem permite derivar `project_id`, UUID do projeto, slug, purpose, provider, locator ou path. Clientes tratam o valor como string atômica: não montam, analisam, normalizam ou reutilizam partes dele. Exibição redigida neutra: `sref_REDACTED_REDACTED_REDACTED_REDACTED_REDACTED`.
+
+Antes de devolver a referência, o broker persiste de forma durável e atômica um registro interno que vincula o digest do token ao UUID interno do projeto, purpose, versão, estado e locator protegido do provider. Esses metadados existem somente no domínio privado do broker e nunca são derivados do token nem projetados na API. A operação persiste a `SecretRef` como artefato somente depois de confirmar esse registro; retries recuperam a mesma referência persistida e não emitem aliases determinísticos.
+
+O valor integral pode existir apenas nos campos tipados necessários entre API, worker e broker. Logs, traces, métricas, erros e eventos de auditoria aplicam redaction antes da serialização e registram no máximo um fingerprint não reversível; UI e suporte exibem somente a forma mascarada. A API nunca expõe path absoluto, senha, DSN real, JWT secret, service-role key, conteúdo de `.env` ou os metadados internos do broker.
 
 ## 4. Naming determinístico
 
 Entradas `client_id` e `project_slug` devem casar `^[a-z][a-z0-9-]{1,23}$`. O `project_id` é `<client_id>-<project_slug>`.
 
-| Recurso         | Regra                                                            |
-| --------------- | ---------------------------------------------------------------- |
-| database        | `je4ndev_<client_id>_<project_slug>` com hífen convertido em `_` |
-| app role        | `<database>_app`                                                 |
-| Compose project | `je4ndev-sb-<client_id>-<project_slug>`                          |
-| network         | `<compose_project>-net`                                          |
-| data store      | `<compose_project>-postgres-data`                                |
-| secret alias    | `projects/<project_id>/<purpose>`                                |
-| backup local    | `<project_id>/<environment>/postgres/`                           |
-| R2 prefix       | `projects/<project_id>/<environment>/postgres/`                  |
+| Recurso         | Regra                                                              |
+| --------------- | ------------------------------------------------------------------ |
+| database        | `je4ndev_<client_id>_<project_slug>` com hífen convertido em `_`   |
+| app role        | `<database>_app`                                                   |
+| Compose project | `je4ndev-sb-<client_id>-<project_slug>`                            |
+| network         | `<compose_project>-net`                                            |
+| data store      | `<compose_project>-postgres-data`                                  |
+| secret record   | `SecretRef` aleatória emitida pelo broker; sem nome determinístico |
+| backup local    | `<project_id>/<environment>/postgres/`                             |
+| R2 prefix       | `projects/<project_id>/<environment>/postgres/`                    |
 
 Os limites de slug mantêm database e role abaixo de 63 bytes. Nomes são normalizados em ASCII minúsculo. Não há fallback silencioso: nome inválido ou colisão com recurso pertencente a outro projeto retorna `NAMING_CONFLICT`. Recursos preexistentes só são adotados quando possuem ownership marker compatível com `project_id`, `driver` e ambiente.
 
@@ -195,7 +199,7 @@ Plano mínimo:
 2. observar database/role/ownership;
 3. criar database e role app com secret gerado pelo broker;
 4. aplicar grants least-privilege e revogar `PUBLIC` quando aplicável;
-5. registrar secret reference fora do repo com modo equivalente a `0600`;
+5. persistir no broker a `SecretRef` aleatória e seu binding interno protegido, fora do repo, antes de publicar o artefato;
 6. configurar backup local, prefixo R2 e política de retenção;
 7. executar teste de conectividade da role app e prova negativa contra projeto canário;
 8. executar backup e restore test isolado;

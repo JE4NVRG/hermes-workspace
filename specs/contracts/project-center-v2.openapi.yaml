@@ -7,7 +7,8 @@ info:
     identifier: MIT
   description: >-
     Control plane para provisionamento isolado. Não aceita shell ou SQL livre e
-    nunca retorna secrets reais.
+    nunca retorna secrets reais. SecretRef é token opaco emitido pelo broker e
+    não carrega identidade, finalidade ou localização do recurso.
 servers:
   - url: /api/v1/project-center
     description: Workspace autenticado
@@ -873,6 +874,14 @@ components:
       type: object
       additionalProperties: false
       required: [type, ref, status]
+      allOf:
+        - if:
+            properties:
+              type: { const: secret_ref }
+            required: [type]
+          then:
+            properties:
+              ref: { $ref: '#/components/schemas/SecretRef' }
       properties:
         type:
           type: string
@@ -894,12 +903,28 @@ components:
         ref:
           type: string
           maxLength: 256
-          description: Identificador público ou referência opaca, sem secret.
+          description: >-
+            Identificador público para artefatos não secretos. Quando type é
+            secret_ref, deve satisfazer SecretRef e ser tratado como valor atômico.
         status:
           {
             type: string,
             enum: [planned, created, adopted, verified, disabled, removed],
           }
+    SecretRef:
+      type: string
+      minLength: 48
+      maxLength: 133
+      pattern: '^sref_[A-Za-z0-9_-]{43,128}$'
+      example: sref_REDACTED_REDACTED_REDACTED_REDACTED_REDACTED
+      description: >-
+        Token opaco e server-issued pelo secret broker, com pelo menos
+        256 bits de entropia CSPRNG em base64url. Não contém nem permite derivar
+        project_id, UUID do projeto, slug, purpose, provider, locator ou path. O
+        broker persiste atomicamente o digest e o binding interno protegido antes
+        de publicar a referência; clientes nunca constroem ou analisam o token.
+        Logs, traces, métricas, erros, auditoria e UI devem redigir o valor integral
+        e expor no máximo fingerprint não reversível ou a forma mascarada neutra.
     SafeFailure:
       type: object
       additionalProperties: false
