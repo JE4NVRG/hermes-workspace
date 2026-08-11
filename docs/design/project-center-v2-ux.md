@@ -1,7 +1,7 @@
 # Project Center v2 — UX do wizard de provisionamento seguro
 
 Status: especificação de discovery; não altera a UI nem autoriza provisionamento real
-Issues: [je4ndev-platform-core#6](https://github.com/JE4NVRG/je4ndev-platform-core/issues/6), [#15](https://github.com/JE4NVRG/je4ndev-platform-core/issues/15)
+Issues: [je4ndev-platform-core#6](https://github.com/JE4NVRG/je4ndev-platform-core/issues/6), [#15](https://github.com/JE4NVRG/je4ndev-platform-core/issues/15), [#19](https://github.com/JE4NVRG/je4ndev-platform-core/issues/19)
 Issue raiz: [je4ndev-platform-core#2](https://github.com/JE4NVRG/je4ndev-platform-core/issues/2)
 Responsável: Design / Neo
 Data: 2026-08-11
@@ -32,7 +32,7 @@ A interface permanece dark-themed e técnica, mas deve ser entendida sem conheci
 
 1. **Segurança antes de velocidade:** nenhuma ação real existe antes de dry-run válido e aprovação explícita.
 2. **Comparação honesta:** “database isolado”, “stack isolada” e “schema compartilhado” não podem usar a mesma linguagem visual.
-3. **Sem credenciais na UI:** exibir nomes, `secret_ref` opacas, fingerprints e IDs; nunca path absoluto, senha, token, JWT secret ou DSN real.
+3. **Sem credenciais na UI:** a `SecretRef` é emitida exclusivamente pelo broker e tratada como valor atômico. A interface exibe somente label funcional e fingerprint não reversível ou máscara neutra; nunca o token integral, identidade embutida, path absoluto, senha, JWT secret ou DSN real.
 4. **Sem sucesso otimista:** concluir apenas após verificações reais e persistidas.
 5. **Falha é estado, não toast:** falhas parciais permanecem visíveis e recuperáveis.
 6. **Ação irreversível é rara e deliberada:** cor, cópia, confirmação e autorização distintas das ações comuns.
@@ -137,7 +137,7 @@ Pré-visualizações derivadas, read-only:
 - `project_id`;
 - database `je4ndev_<cliente>_<projeto>`;
 - role `je4ndev_<cliente>_<projeto>_app`;
-- `secret_ref` opaca e mascarada, por exemplo `secret://projects/<project_id>/d•••••••-url`;
+- intenção “Credencial gerenciada pelo broker”; antes da emissão não existe referência para pré-visualizar, montar ou inferir;
 - diretórios esperados de migrations, schema e rollback.
 
 Validações:
@@ -184,13 +184,15 @@ O estado inicial é um skeleton com texto “Validando contexto, capacidade e co
 - Git/repo e arquivos versionados;
 - database, owner controlado e role app;
 - grants e proibições da role;
-- `secret_ref` opaca e estado da proteção do material privado, sem path absoluto;
+- label funcional, fingerprint não reversível ou máscara neutra da `SecretRef` emitida pelo broker, além do estado da proteção do material privado;
 - Compose, rede, volumes e serviços quando Supabase completo;
 - bindings locais e domínios planejados;
 - backup local, R2, restore test e monitoramento;
 - verificações e ações compensatórias de rollback.
 
 Cada item possui `Criar`, `Reutilizar`, `Sem alteração`, `Conflito` ou `Bloqueado`. O plano mostra `plan_id`, `Idempotency-Key` mascarada, hash, validade e timestamp. Antes do primeiro POST, o cliente/SDK gera e persiste a chave de 16–128 caracteres; após timeout sem resposta, reutiliza a mesma chave. O servidor persiste apenas `idempotency_key_hash`, e `operation_id`/`request_id` gerados pelo servidor nunca substituem a chave do cliente. Repetir o dry-run com a mesma intenção usa a mesma chave e deve recuperar o plano original; alterar a intenção cria e persiste uma nova chave antes da nova tentativa.
+
+Para artefatos `secret_ref`, a UI não constrói, analisa, normaliza nem deriva referência a partir de `project_id`, UUID, slug, purpose, provider, locator ou path. O broker emite o token opaco no servidor, persiste atomicamente seu digest e binding privado antes de publicar o artefato e, em retries idempotentes, recupera a referência já persistida. A superfície visual recebe somente label, status e fingerprint não reversível ou máscara neutra; o valor integral não é renderizado, copiado, exportado, enviado à telemetria ou usado em URLs.
 
 Gates automáticos mínimos:
 
@@ -385,6 +387,7 @@ Cada operação expõe um painel **Trilha de auditoria** com:
 
 - `request_id`, `plan_id`, `approval_id` e `operation_id`;
 - projeto, ambiente, modo e `Idempotency-Key` mascarada; o valor bruto nunca entra em auditoria;
+- labels e fingerprints não reversíveis de credenciais gerenciadas; a `SecretRef` integral e seu binding privado nunca entram no evento ou no DOM;
 - evento, ator/role, timestamp e origem;
 - hash do plano aprovado;
 - recursos afetados por ID não sensível;
@@ -507,6 +510,8 @@ Métricas:
 - [ ] Uma falha parcial nunca sugere nova criação antes de reconciliação.
 - [ ] Ações irreversíveis têm frase derivada, motivo, gate e consequência explícita.
 - [ ] Nenhum estado, export ou auditoria revela credencial real.
+- [ ] A UI nunca monta ou infere `SecretRef`: antes da emissão mostra apenas a intenção; depois, somente label e fingerprint não reversível ou máscara neutra fornecidos pela projeção sanitizada do broker.
+- [ ] Token integral, binding privado, identidade, finalidade, provider, locator e path de uma `SecretRef` não aparecem no DOM, URL, telemetria, clipboard, export ou suporte.
 - [ ] Verificação cobre idempotência, least privilege, isolamento cruzado, backup e restore test.
 - [ ] O fluxo atende WCAG 2.2 AA, teclado, screen reader, reduced motion, zoom e touch targets.
 - [ ] O fluxo funciona em desktop, tablet e mobile sem esconder riscos ou ações críticas.
@@ -525,10 +530,10 @@ A UX aqui descrita não valida a arquitetura por si só. Ela torna decisões, ga
 
 ## 14. Rastreabilidade do alinhamento contratual
 
-| Achado      | Correção nesta UX                                                                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PCV2-QA-001 | tabela explícita `OperationState` → label; aliases de apresentação não são enviados ao domínio e transições vêm de `x-allowed-transitions`       |
-| PCV2-QA-002 | rollback separado em dry-run, aprovação por `rollback_plan_hash` e execute com novo `approval_id` e segregação destrutiva                        |
-| PCV2-QA-005 | `Idempotency-Key` criada/persistida pelo cliente/SDK antes do primeiro POST, reutilizada após timeout e armazenada no servidor somente como hash |
-| PCV2-QA-006 | approve exige hash/frase; reject usa formulário separado, exige motivo e não solicita nem envia frase de aprovação                               |
-| Segurança   | path absoluto removido da superfície; a UI exibe apenas `secret_ref` opaca/mascarada e estado sanitizado                                         |
+| Achado      | Correção nesta UX                                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PCV2-QA-001 | tabela explícita `OperationState` → label; aliases de apresentação não são enviados ao domínio e transições vêm de `x-allowed-transitions`                                                         |
+| PCV2-QA-002 | rollback separado em dry-run, aprovação por `rollback_plan_hash` e execute com novo `approval_id` e segregação destrutiva                                                                          |
+| PCV2-QA-003 | removido alias derivável; broker emite `SecretRef` opaca e persiste o binding privado antes da publicação; UI mostra apenas label e fingerprint não reversível ou máscara neutra, nunca token/path |
+| PCV2-QA-005 | `Idempotency-Key` criada/persistida pelo cliente/SDK antes do primeiro POST, reutilizada após timeout e armazenada no servidor somente como hash                                                   |
+| PCV2-QA-006 | approve exige hash/frase; reject usa formulário separado, exige motivo e não solicita nem envia frase de aprovação                                                                                 |
