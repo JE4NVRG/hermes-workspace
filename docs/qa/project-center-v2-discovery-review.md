@@ -199,4 +199,102 @@ O reteste deve comprovar:
 8. links GitHub verificados com autenticação válida;
 9. zero side effect real durante o reteste da discovery.
 
-**Decisão final desta rodada: NO-GO.**
+**Decisão final desta rodada inicial: NO-GO.**
+
+## 7. Reteste das correções — 2026-08-11
+
+### 7.1 Escopo e HEADs revalidados
+
+Este reteste buscou as heads atualizadas das quatro branches, sem GitHub API, e validou os refs remotos por SSH:
+
+| PR | Branch | HEAD remoto no reteste |
+| --- | --- | --- |
+| #1 | `project-center-v2/prd` | `a743bbdaf60ad068a6dc2be8e328a067ee071b58` |
+| #2 | `project-center-v2/spec` | `0bbe2492455754c2d0fe8073d7f51fce03ba537c` |
+| #3 | `project-center-v2/security` | `d19a49ca719b32d190fb6d11ab7723f6a16fc0e2` |
+| #4 | `project-center-v2/ux` | `eb5fac3529392479a132a31f9043691d70b5ccbe` |
+
+Comandos reproduzíveis:
+
+```bash
+git fetch je4n project-center-v2/prd project-center-v2/spec project-center-v2/security project-center-v2/ux
+git ls-remote git@github.com:JE4NVRG/hermes-workspace.git \
+  refs/heads/project-center-v2/prd refs/heads/project-center-v2/spec \
+  refs/heads/project-center-v2/security refs/heads/project-center-v2/ux
+node scripts/project-center-v2-discovery-retest.mjs
+npx --yes @redocly/cli@1.34.5 lint \
+  <(git show je4n/project-center-v2/spec:specs/contracts/project-center-v2.openapi.yaml)
+npx --yes prettier@3.8.1 --check \
+  docs/qa/project-center-v2-discovery-review.md scripts/project-center-v2-discovery-retest.mjs
+npx --yes eslint@10.2.0 scripts/project-center-v2-discovery-retest.mjs
+git diff --check
+```
+
+O script versionado lê os seis artefatos diretamente dos refs Git, parseia o OpenAPI e retorna JSON com veredito. O exit code `1` é esperado enquanto houver achado bloqueante.
+
+### 7.2 Gates automatizados reexecutados
+
+| Gate | Resultado | Evidência do reteste |
+| --- | --- | --- |
+| Parse OpenAPI 3.1 e `$ref` locais | PASS | 134 refs; 0 não resolvidas |
+| `operationId` e parâmetros de path | PASS | 9 IDs únicos; 0 duplicados; 0 parâmetros ausentes |
+| Estados e transições | PASS | 15 estados; 23 transições válidas; 0 destinos fora do enum |
+| Projeções de estado nos documentos | PASS | PRD, spec, threat model e UX referenciam `OperationState`/tabela canônica; 0 lacunas |
+| RBAC contratual | PASS | `default: deny`; 5 roles; cada uma das 9 operações pertence a uma role e seus `x-required-scopes` estão cobertos |
+| Idempotência | PASS | 7/7 mutações exigem `Idempotency-Key`; contrato declara geração/persistência client-owned antes do primeiro POST |
+| Rollback | PASS | endpoints `dry-run`, `approve` e `execute`; `rollback_plan_hash`, `approval_id` e segregação destrutiva presentes |
+| Approve/reject | PASS | provisionamento e rollback usam `oneOf` discriminado; approve exige hash/confirmação e reject exige motivo sem confirmação |
+| Identidade e referência de secret | **FAIL** | 0 paths absolutos, mas três artefatos ainda usam duas identidades incompatíveis na `secret_ref` |
+| Secret scan dos diffs | PASS | 4 branches; 4 classes de padrão; 0 hits |
+| Redocly CLI 1.34.5 | PASS | `Woohoo! Your API description is valid.` |
+| Prettier 3.8.1 | PASS | os dois artefatos do reteste usam o estilo configurado |
+| ESLint | PASS | script sem erros; somente aviso upstream sobre `.eslintignore` legado |
+| `git diff --check` | PASS | 0 erros de whitespace no patch do reteste |
+| Referências dos artefatos | PASS | `git cat-file -e` resolveu 6/6 arquivos nas heads revisadas |
+
+O reteste foi estritamente documental/contratual. Nenhum banco, role, secret, Docker, Nginx, DNS, Cloudflare, systemd ou ambiente de produção foi acessado ou alterado.
+
+### 7.3 Resultado por achado
+
+#### PCV2-QA-001 — PASS — estados canônicos
+
+`OperationState` contém 15 valores e `x-allowed-transitions` contém 23 arestas válidas. PRD (`docs/PRD-project-center-v2.md:201-218`), spec (`specs/features/project-center-v2.spec.md:89-122`), threat model (`docs/security/project-center-v2-threat-model.md:283-297`) e UX (`docs/design/project-center-v2-ux.md:339-361`) projetam os mesmos identificadores sem reintroduzir aliases de domínio.
+
+#### PCV2-QA-002 — PASS — rollback com plano e aprovação próprios
+
+O OpenAPI agora separa `POST .../rollback/dry-run`, `POST .../rollback/approve` e `POST .../rollback/execute`. `RollbackPlan` exige `rollback_plan_hash`; execute exige hash e `approval_id`; a policy `destructive_rollback` vincula a decisão ao hash e separa os atores. PRD, ADR, spec, threat model e UX descrevem as mesmas três fases.
+
+#### PCV2-QA-003 — FAIL P1 — `secret_ref` ainda alterna identidade pública e UUID interno
+
+O vazamento de path absoluto foi corrigido: o scanner encontrou 0 ocorrências de `/home/` nos seis artefatos. A identidade, porém, continua contraditória:
+
+- o PRD (`docs/PRD-project-center-v2.md:194-197`) determina `project_uuid` imutável e afirma que clientes não constroem `secret_ref` a partir de UUID, `project_id`, slug ou path;
+- o threat model (`docs/security/project-center-v2-threat-model.md:158`) exemplifica `secret://projects/<project-uuid>/<purpose>`;
+- a spec (`specs/features/project-center-v2.spec.md:72`) exemplifica `secret://projects/<project_id>/database-url`;
+- a UX (`docs/design/project-center-v2-ux.md:140`) exibe `secret://projects/<project_id>/d•••••••-url`;
+- o OpenAPI deixa `ArtifactRef.ref` como string genérica e não resolve qual identidade é canônica.
+
+Assim, implementações podem vincular o secret ao identificador público determinístico ou ao UUID interno e ainda alegar conformidade local. Correção obrigatória: definir no contrato uma referência opaca emitida pelo broker, sem placeholder derivável pelo cliente, e projetar exatamente a mesma regra/exemplo em PRD, spec, threat model e UX.
+
+#### PCV2-QA-004 — PASS — RBAC canônico e validável
+
+O `x-rbac-policy` contém cinco roles, `default: deny`, ambientes e regras de segregação. As nove operações possuem `x-required-scopes`; todos os `operationId` referenciados existem e cada operação está atribuída exatamente a uma role HTTP canônica.
+
+#### PCV2-QA-005 — PASS — idempotência client-owned
+
+As sete mutações referenciam o header obrigatório. Sua descrição determina criação e persistência pelo cliente/SDK antes da primeira tentativa, reutilização após timeout e persistência somente do hash no servidor. PRD, ADR, spec, threat model e UX repetem essa semântica.
+
+#### PCV2-QA-006 — PASS — approve/reject discriminados
+
+`ApprovalRequest` e `RollbackApprovalRequest` usam `oneOf` com discriminator `decision`. Os ramos approve exigem hash e confirmação; os ramos reject exigem `decision` e `reason`, sem hash nem frase de aprovação.
+
+### 7.4 Matriz final do reteste
+
+| Decisão | Resultado | Motivo |
+| --- | --- | --- |
+| Correções PCV2-QA-001/002/004/005/006 | **PASS** | contratos e projeções agora são consistentes e validados automaticamente |
+| Correção PCV2-QA-003 | **FAIL P1** | `secret_ref` alterna `<project_id>` e `<project-uuid>` e o OpenAPI não torna a identidade opaca inequívoca |
+| GO operacional | **NO-GO mantido** | discovery não implementa nem autoriza side effects reais |
+| GO para consolidação do Gate 3 | **NO-GO** | não consolidar PRs #1–#4 enquanto PCV2-QA-003 permanecer divergente |
+
+**Decisão final do reteste: NO-GO. Cinco de seis achados foram corrigidos; PCV2-QA-003 permanece bloqueante para consolidação.**
