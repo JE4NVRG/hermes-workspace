@@ -6,7 +6,7 @@
 
 **Fora de escopo:** alterar banco, roles, secrets, Docker, Nginx, DNS, Cloudflare, systemd ou produção
 
-**Referências:** issue raiz JE4NVRG/je4ndev-platform-core#2; issue de segurança #4; correção de segurança #14; brief `project-center-v2-20260811/ISSUE.md`; contrato canônico `specs/contracts/project-center-v2.openapi.yaml` no PR #2; `CONSTITUTION.md`; `docs/database-provisioning.md`; `docs/supabase-replacement.md`; `docs/je4ndev-platform-api.md`
+**Referências:** issue raiz JE4NVRG/je4ndev-platform-core#2; issue de segurança #4; correções de segurança #14 e #18; brief `project-center-v2-20260811/ISSUE.md`; contrato canônico `specs/contracts/project-center-v2.openapi.yaml` no PR #2; `CONSTITUTION.md`; `docs/database-provisioning.md`; `docs/supabase-replacement.md`; `docs/je4ndev-platform-api.md`
 
 O OpenAPI do PR #2 é a fonte canônica para `OperationState.x-allowed-transitions`, `x-rbac-policy`, `x-required-scopes`, endpoints, schemas e códigos de erro. Este threat model projeta esses identificadores sem criar aliases. A identidade de segurança dos recursos continua sendo o `project_uuid` imutável mantido no registro server-side; nomes derivados de `client_id`/`project_slug` são aliases operacionais, nunca a chave de ownership. A API/UI só expõe referências de secret opacas, nunca o path físico.
 
@@ -155,7 +155,9 @@ Cada stack possui Compose project, rede, Postgres/data path, volumes, JWT secret
 
 ### I-08 — Secrets não observáveis
 
-Nenhuma resposta, UI, log, trace, erro, audit event, shell history, process argv, Git diff, PR, Kanban ou prompt contém senha, DSN real, JWT secret, service key, credencial R2 ou path físico do secret. API/UI recebem apenas `secret_ref` opaca, como `secret://projects/<project-uuid>/<purpose>`. Representações mascaradas não preservam tamanho ou prefixo útil além do necessário.
+Nenhuma resposta, UI, log, trace, métrica, erro, audit event, shell history, process argv, Git diff, PR, Kanban ou prompt contém senha, DSN real, JWT secret, service key, credencial R2, path físico do secret ou a `SecretRef` integral. Quando `ArtifactRef.type = secret_ref`, o campo `ref` contém somente uma `SecretRef` opaca emitida pelo broker: `sref_` seguido de 43–128 caracteres base64url, com pelo menos 256 bits de entropia CSPRNG. O token não contém, codifica nem permite derivar `project_id`, `project_uuid`, slug, purpose, provider, locator ou path; clientes o tratam como string atômica e nunca o montam, analisam, normalizam ou reutilizam parcialmente. UI e observabilidade exibem somente fingerprint não reversível ou a forma mascarada neutra `sref_REDACTED_REDACTED_REDACTED_REDACTED_REDACTED`.
+
+Antes de publicar o artefato, o broker persiste de forma durável e atômica o digest do token e seu binding interno protegido para UUID do projeto, purpose, versão, estado e locator do provider. O binding permanece privado, não é derivado do token e não transforma posse da referência em autorização; resolução exige identidade, scope e ownership válidos no servidor. Retry idempotente recupera a mesma referência persistida, enquanto rotação emite uma nova referência aleatória e revoga a anterior conforme política.
 
 ### I-09 — Filesystem confinado
 
@@ -334,17 +336,22 @@ Compensação nunca tenta “adivinhar” estado. Falha de compensação gera `m
 - CSPRNG do sistema; mínimo 256 bits para senhas/tokens de alta entropia.
 - Secrets exclusivos por projeto, ambiente e finalidade; não derivar de slug, timestamp ou secret global.
 - JWT signing material do `supabase_isolated` exclusivo por stack; suportar `kid` e sobreposição durante rotação.
+- Cada `SecretRef` é emitida exclusivamente pelo broker como `sref_` + 43–128 caracteres base64url com pelo menos 256 bits CSPRNG; não há algoritmo cliente nem alias determinístico para construí-la a partir de identidade, finalidade ou localização.
 
 ### 10.2 Armazenamento
 
-- path físico canônico por `<project-uuid>` (slug apenas como metadado), fora do repo, em diretório 0700 e arquivo 0600; o path concreto é detalhe privado do secret broker e não faz parte do contrato público;
+- path físico canônico governado pelo UUID interno do projeto (slug apenas como metadado), fora do repo, em diretório 0700 e arquivo 0600; o path concreto é detalhe privado do secret broker e não faz parte do contrato público;
 - escrita atômica, no-follow, owner `jean`/runtime dedicado e backup apenas se cifrado e explicitamente necessário;
+- antes de publicar o `ArtifactRef`, persistir atomicamente em storage privado o digest da `SecretRef` e o binding para UUID interno do projeto, purpose, versão, estado e locator protegido; falha nessa persistência aborta a emissão;
+- indexar e comparar referências pelo digest com primitiva resistente a timing; o token integral não integra logs, índices de busca, audit events ou metadados públicos;
 - preferir secret manager/credentials do systemd ou Docker secrets; arquivo env é baseline mínimo, não autorização para expor env ao agente;
 - nunca versionar, anexar ao Kanban, incluir em PR, copiar para UI ou retornar por API.
 
 ### 10.3 Distribuição e uso
 
-- provisionador injeta secret diretamente no runtime autorizado; agentes recebem somente URL mascarada e metadados;
+- provisionador injeta secret diretamente no runtime autorizado; agentes recebem somente `SecretRef` em campo tipado quando estritamente necessário e UI/suporte recebem apenas fingerprint ou forma mascarada neutra;
+- consumidores tratam a referência como valor atômico: não fazem parsing, concatenação, normalização, roteamento ou autorização com partes do token;
+- o broker resolve a referência somente após autenticação, scope, ownership e estado do binding; conhecer ou adivinhar uma `SecretRef` nunca concede acesso ao secret;
 - nenhum secret em command line, process title, health response, telemetry ou exception;
 - leitores limitados ao runtime do projeto e ao mecanismo de rotação; API do Workspace não lê valor após provisionamento.
 
@@ -394,6 +401,10 @@ Injetar canary secrets conhecidos em fixtures isoladas e provar ausência em res
 | API-13 | approve e reject de provisionamento/rollback | ramos `oneOf` discriminados; approve exige hash/confirmação, reject exige motivo |
 | API-14 | rollback dry-run/approve/execute com hash, ator ou revisão trocados | rejeição antes do lease e de qualquer side effect |
 | API-15 | token sem scope requerido chama cada `operationId` | 403 uniforme conforme `x-rbac-policy`; zero side effect |
+| API-16 | cliente envia URI determinística legada, UUID, `project_id`, slug, purpose, provider, locator ou path como referência, ou `sref_` fora do formato/entropia contratual | rejeição antes da resolução; nenhum binding, lookup ou side effect |
+| API-17 | duas emissões independentes ou rotação para o mesmo projeto/purpose; retry idempotente da mesma operação | emissões/rotação produzem tokens aleatórios distintos; retry recupera a referência já persistida sem alias determinístico |
+| API-18 | referência válida de A é apresentada por ator/projeto B, revogada, expirada ou sem scope | 403/404 uniforme; nenhum secret, binding, locator, fingerprint correlacionável ou metadata de A |
+| API-19 | falha antes/durante a persistência do digest e binding privado | nenhum `ArtifactRef` publicado; estado reconciliável e zero token órfão observável |
 
 ### 12.2 PostgreSQL A × B
 
@@ -448,7 +459,8 @@ Qualquer item aberto mantém o sistema em **NO-GO**:
 - [ ] Provisionador dedicado, sandboxed e limitado a templates/ações allowlisted.
 - [ ] Dry-run comprovadamente sem side effects e approval vinculada ao `plan_hash`.
 - [ ] Estados/transições e role → scope → `operationId` idênticos ao OpenAPI canônico, sem aliases locais.
-- [ ] `project_uuid` imutável governa ownership; API/UI expõem somente `secret_ref` opaca, sem path físico.
+- [ ] `project_uuid` imutável governa ownership; o broker emite `SecretRef` CSPRNG não derivável e persiste digest/binding privado atomicamente antes de publicar o artefato.
+- [ ] Contrato, API, testes, UI e observabilidade não constroem, analisam nem expõem `SecretRef` integral, identidade, purpose, locator ou path; autorização permanece separada da posse do token.
 - [ ] Idempotency store durável, fingerprint, lock por projeto e testes de concorrência.
 - [ ] `Idempotency-Key` client-owned persiste antes do primeiro POST e approve/reject são schemas discriminados.
 - [ ] Saga/journal, compensações com ownership e caminho `manual_intervention_required` testados.
@@ -473,7 +485,7 @@ Drop database/role/volume/stack, restore em produção, rotação de signing key
 |---|---|
 | `PCV2-QA-001` | seção 9.1 projeta exatamente o enum/transições de `OperationState.x-allowed-transitions` e remove aliases locais |
 | `PCV2-QA-002` | seção 9.3 exige rollback dry-run/approve/execute, hash próprio, approval nova, drift/ownership e segundo ator |
-| `PCV2-QA-003` | invariantes I-01, I-02 e I-08 vinculam ownership ao `project_uuid` imutável e expõem somente `secret_ref` opaca |
+| `PCV2-QA-003` | I-08 e seções 10.1–10.3 exigem `SecretRef` CSPRNG broker-issued, atômica e não derivável; testes API-16–API-19 negam placeholders, parsing, cross-project, tokens inválidos e publicação sem binding privado |
 | `PCV2-QA-004` | seção 4.1 usa roles/scopes do `x-rbac-policy` e referencia `x-required-scopes` como fonte contratual |
 | `PCV2-QA-005` | I-10 e seção 9.2 tornam a `Idempotency-Key` client-owned antes do primeiro request; servidor persiste somente hash |
 | `PCV2-QA-006` | I-04 e testes API-13 exigem `oneOf` discriminado para approve/reject de provisionamento e rollback |
