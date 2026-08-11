@@ -1,9 +1,9 @@
 # Project Center v2 — UX do wizard de provisionamento seguro
 
-Status: especificação de discovery; não altera a UI nem autoriza provisionamento real  
-Issue: [je4ndev-platform-core#6](https://github.com/JE4NVRG/je4ndev-platform-core/issues/6)  
-Issue raiz: [je4ndev-platform-core#2](https://github.com/JE4NVRG/je4ndev-platform-core/issues/2)  
-Responsável: Design / Neo  
+Status: especificação de discovery; não altera a UI nem autoriza provisionamento real
+Issue: [je4ndev-platform-core#6](https://github.com/JE4NVRG/je4ndev-platform-core/issues/6)
+Issue raiz: [je4ndev-platform-core#2](https://github.com/JE4NVRG/je4ndev-platform-core/issues/2)
+Responsável: Design / Neo
 Data: 2026-08-11
 
 ## 1. Objetivo e limites
@@ -404,19 +404,19 @@ Evitar:
 
 ### Cópias críticas
 
-**Bloqueio legado**  
+**Bloqueio legado**
 “Este modo compartilha Auth, Storage, chaves, API e blast radius. Novos projetos não podem usar schema compartilhado.”
 
-**Supabase completo**  
+**Supabase completo**
 “Cria uma stack com 14 containers no baseline atual. A estimativa de RAM será recalculada no dry-run e precisa de headroom aprovado.”
 
-**Aguardando aprovação**  
+**Aguardando aprovação**
 “O plano foi validado, mas nenhum recurso foi criado. A execução depende de um aprovador com escopo administrativo.”
 
-**Falha parcial**  
+**Falha parcial**
 “A operação parou após criar alguns recursos. Não inicie outra criação. Revise a reconciliação vinculada a esta operação.”
 
-**Telemetria indisponível**  
+**Telemetria indisponível**
 “Não foi possível medir a capacidade atual do host. O modo Supabase completo permanece bloqueado para evitar sobrecarga.”
 
 ## 10. Componentes e handoff de implementação futura
