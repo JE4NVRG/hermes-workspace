@@ -1,0 +1,767 @@
+openapi: 3.1.0
+info:
+  title: JE4NDEV Project Center v2 API
+  version: 2.0.0-draft
+  license:
+    name: MIT
+    identifier: MIT
+  description: >-
+    Control plane para provisionamento isolado. Não aceita shell ou SQL livre e
+    nunca retorna secrets reais.
+servers:
+  - url: /api/v1/project-center
+    description: Workspace autenticado
+security:
+  - bearerAuth: []
+tags:
+  - name: Operations
+    description: Ciclo idempotente de planejamento, aprovação, execução, verificação e rollback.
+  - name: Audit
+    description: Eventos append-only sanitizados de uma operação.
+paths:
+  /operations/dry-run:
+    post:
+      tags: [Operations]
+      operationId: createProjectDryRun
+      summary: Planeja o provisionamento sem side effects
+      description: Requer scope admin:project-factory.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DryRunRequest'
+      responses:
+        '201':
+          description: Plano novo criado
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '200':
+          description: Replay idempotente
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/PolicyDenied' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /operations/{operation_id}/approve:
+    post:
+      tags: [Operations]
+      operationId: decideProjectOperationApproval
+      summary: Aprova ou rejeita o hash exato de um plano
+      description: >-
+        Requer admin:approve-side-effects. Em produção o aprovador deve ser humano
+        e diferente do solicitante.
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalRequest'
+      responses:
+        '200':
+          description: Decisão registrada ou replay equivalente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Expired' }
+  /operations/{operation_id}/execute:
+    post:
+      tags: [Operations]
+      operationId: executeProjectOperation
+      summary: Enfileira uma operação aprovada
+      description: Revalida approval, política, hash e revisão observada.
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteRequest'
+      responses:
+        '202':
+          description: Operação enfileirada ou já em andamento
+          headers:
+            Location:
+              description: URL de status
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Expired' }
+        '423': { $ref: '#/components/responses/Locked' }
+  /operations/{operation_id}:
+    get:
+      tags: [Operations]
+      operationId: getProjectOperation
+      summary: Consulta estado e resultado sanitizado
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+      responses:
+        '200':
+          description: Operação encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /operations/{operation_id}/verify:
+    post:
+      tags: [Operations]
+      operationId: verifyProjectOperation
+      summary: Enfileira verificação read-only
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyRequest'
+      responses:
+        '202':
+          description: Verificação enfileirada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '423': { $ref: '#/components/responses/Locked' }
+  /operations/{operation_id}/rollback:
+    post:
+      tags: [Operations]
+      operationId: rollbackProjectOperation
+      summary: Solicita compensação segura
+      description: >-
+        Não remove recurso sem ownership comprovado. Rollback destrutivo em produção
+        cria novo gate de aprovação.
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackRequest'
+      responses:
+        '202':
+          description: Rollback enfileirado ou aguardando aprovação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '423': { $ref: '#/components/responses/Locked' }
+  /operations/{operation_id}/audit:
+    get:
+      tags: [Audit]
+      operationId: listProjectOperationAudit
+      summary: Lista eventos append-only sanitizados
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 256 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200':
+          description: Página de eventos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPage'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: scoped-token
+  parameters:
+    OperationId:
+      name: operation_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Vinculada ao ator, rota e hash canônico do payload por 24 horas.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._:-]+$'
+    RequestId:
+      name: X-Request-Id
+      in: header
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    IfMatchVersion:
+      name: If-Match
+      in: header
+      required: true
+      description: Versão otimista da operação entre aspas.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+  headers:
+    IdempotencyReplayed:
+      description: Verdadeiro quando a resposta é replay idempotente.
+      schema: { type: boolean }
+  responses:
+    InvalidRequest:
+      description: Payload ou transição inválida
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        }
+    Unauthorized:
+      description: Token ausente ou inválido
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        }
+    Forbidden:
+      description: Scope, separação de funções ou policy negados
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        }
+    NotFound:
+      description: Operação ausente ou invisível ao ator
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        }
+    Conflict:
+      description: Idempotência, naming, estado ou revisão em conflito
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        }
+    PolicyDenied:
+      description: Intenção fora da policy ou allowlist
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        }
+    Expired:
+      description: Plano ou aprovação expirou
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        }
+    Locked:
+      description: Outra operação possui lease exclusivo
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        }
+    RateLimited:
+      description: Limite por ator excedido
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        }
+  schemas:
+    Driver:
+      type: string
+      enum: [postgresql_isolated, supabase_isolated]
+    Environment:
+      type: string
+      enum: [development, staging, production]
+    OperationState:
+      type: string
+      enum:
+        [
+          planned,
+          awaiting_approval,
+          approved,
+          queued,
+          executing,
+          verifying,
+          succeeded,
+          failed,
+          rollback_pending,
+          rolling_back,
+          rolled_back,
+          manual_intervention_required,
+          rejected,
+          expired,
+          cancelled,
+        ]
+    Sha256:
+      type: string
+      pattern: '^[a-f0-9]{64}$'
+    Capabilities:
+      type: object
+      additionalProperties: false
+      required: [auth, storage, realtime, postgrest, backup]
+      properties:
+        auth: { type: boolean }
+        storage: { type: boolean }
+        realtime: { type: boolean }
+        postgrest: { type: boolean }
+        backup: { type: boolean, const: true }
+    RequestedLimits:
+      type: object
+      additionalProperties: false
+      properties:
+        database_size_mb: { type: integer, minimum: 128, maximum: 102400 }
+        memory_mb: { type: integer, minimum: 256, maximum: 16384 }
+        cpu_millicores: { type: integer, minimum: 100, maximum: 8000 }
+        backup_retention_days: { type: integer, minimum: 7, maximum: 90 }
+    ProjectIntent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          client_id,
+          project_slug,
+          display_name,
+          driver,
+          environment,
+          capabilities,
+          host_target,
+        ]
+      properties:
+        client_id: { type: string, pattern: '^[a-z][a-z0-9-]{1,23}$' }
+        project_slug: { type: string, pattern: '^[a-z][a-z0-9-]{1,23}$' }
+        display_name: { type: string, minLength: 3, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
+        driver: { $ref: '#/components/schemas/Driver' }
+        environment: { $ref: '#/components/schemas/Environment' }
+        host_target:
+          type: string
+          description: ID de allowlist, não hostname arbitrário.
+          enum: [vps-primary-local]
+        repository:
+          type: object
+          additionalProperties: false
+          properties:
+            registry_id: { type: string, minLength: 3, maxLength: 128 }
+        capabilities: { $ref: '#/components/schemas/Capabilities' }
+        requested_limits: { $ref: '#/components/schemas/RequestedLimits' }
+    DryRunRequest:
+      type: object
+      additionalProperties: false
+      required: [intent]
+      properties:
+        intent: { $ref: '#/components/schemas/ProjectIntent' }
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    ApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, plan_hash, confirmation]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        plan_hash: { $ref: '#/components/schemas/Sha256' }
+        confirmation:
+          type: string
+          minLength: 3
+          maxLength: 160
+          description: Frase APROVAR project_id prefixo-do-hash para aprovação.
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    ExecuteRequest:
+      type: object
+      additionalProperties: false
+      required: [plan_hash]
+      properties:
+        plan_hash: { $ref: '#/components/schemas/Sha256' }
+    VerifyRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        checks:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              [
+                ownership,
+                least_privilege,
+                cross_isolation,
+                health,
+                secret_permissions,
+                backup,
+                restore,
+              ]
+    RollbackRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, confirmation]
+      properties:
+        reason: { type: string, minLength: 10, maxLength: 500 }
+        confirmation:
+          type: string
+          minLength: 3
+          maxLength: 160
+          description: Frase ROLLBACK project_id prefixo-do-hash.
+        preserve_data: { type: boolean, default: true }
+    OperationResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, operation]
+      properties:
+        request_id: { type: string }
+        operation: { $ref: '#/components/schemas/Operation' }
+    Operation:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          operation_id,
+          project_id,
+          driver,
+          environment,
+          state,
+          operation_version,
+          plan_hash,
+          plan,
+          created_at,
+          updated_at,
+          expires_at,
+          status_url,
+          audit_url,
+        ]
+      properties:
+        operation_id: { type: string, format: uuid }
+        project_id:
+          {
+            type: string,
+            pattern: '^[a-z][a-z0-9-]{1,23}-[a-z][a-z0-9-]{1,23}$',
+          }
+        driver: { $ref: '#/components/schemas/Driver' }
+        driver_version: { type: string, maxLength: 64 }
+        environment: { $ref: '#/components/schemas/Environment' }
+        state: { $ref: '#/components/schemas/OperationState' }
+        operation_version: { type: integer, minimum: 1 }
+        plan_hash: { $ref: '#/components/schemas/Sha256' }
+        observed_revision: { type: string, maxLength: 128 }
+        plan: { $ref: '#/components/schemas/Plan' }
+        approval:
+          oneOf:
+            - $ref: '#/components/schemas/Approval'
+            - type: 'null'
+        verification:
+          oneOf:
+            - $ref: '#/components/schemas/Verification'
+            - type: 'null'
+        artifacts:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ArtifactRef' }
+        failure:
+          oneOf:
+            - $ref: '#/components/schemas/SafeFailure'
+            - type: 'null'
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        status_url: { type: string }
+        audit_url: { type: string }
+    Plan:
+      type: object
+      additionalProperties: false
+      required: [policy_version, actions, estimated_resources, warnings]
+      properties:
+        policy_version: { type: string, maxLength: 64 }
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/PlannedAction' }
+        estimated_resources:
+          type: object
+          additionalProperties: false
+          properties:
+            database_size_mb: { type: integer, minimum: 0 }
+            memory_mb: { type: integer, minimum: 0 }
+            cpu_millicores: { type: integer, minimum: 0 }
+            local_backup_mb: { type: integer, minimum: 0 }
+        warnings:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 300 }
+    PlannedAction:
+      type: object
+      additionalProperties: false
+      required: [action_id, kind, target_ref, risk, reversible, dependencies]
+      properties:
+        action_id: { type: string, pattern: '^act_[A-Za-z0-9_-]{8,64}$' }
+        kind:
+          type: string
+          enum:
+            [
+              reserve_project,
+              create_database,
+              create_app_role,
+              apply_least_privilege,
+              create_secret_ref,
+              configure_backup,
+              configure_r2_prefix,
+              render_compose_template,
+              create_network,
+              create_data_store,
+              start_stack,
+              health_check,
+              verify_cross_isolation,
+              verify_backup_restore,
+              publish_registry,
+              publish_platform_context,
+              disable_resource,
+              drop_resource_created_by_operation,
+            ]
+        target_ref: { type: string, maxLength: 200 }
+        risk: { type: string, enum: [read_only, reversible, destructive] }
+        reversible: { type: boolean }
+        compensation_kind: { type: string, maxLength: 80 }
+        dependencies:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string }
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [decision, actor_ref, plan_hash, decided_at, expires_at]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        actor_ref: { type: string, maxLength: 128 }
+        plan_hash: { $ref: '#/components/schemas/Sha256' }
+        decided_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    Verification:
+      type: object
+      additionalProperties: false
+      required: [outcome, checks, observed_at]
+      properties:
+        outcome: { type: string, enum: [pending, passed, failed, inconclusive] }
+        checks:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/VerificationCheck' }
+        observed_at: { type: string, format: date-time }
+    VerificationCheck:
+      type: object
+      additionalProperties: false
+      required: [name, outcome]
+      properties:
+        name: { type: string, maxLength: 80 }
+        outcome: { type: string, enum: [passed, failed, skipped, inconclusive] }
+        evidence_ref: { type: string, maxLength: 256 }
+        safe_detail: { type: string, maxLength: 500 }
+    ArtifactRef:
+      type: object
+      additionalProperties: false
+      required: [type, ref, status]
+      properties:
+        type:
+          type: string
+          enum:
+            [
+              database,
+              app_role,
+              compose_project,
+              network,
+              data_store,
+              secret_ref,
+              backup_policy,
+              r2_prefix,
+              restore_test,
+              registry_record,
+              platform_context,
+              endpoint_masked,
+            ]
+        ref:
+          type: string
+          maxLength: 256
+          description: Identificador público ou referência opaca, sem secret.
+        status:
+          {
+            type: string,
+            enum: [planned, created, adopted, verified, disabled, removed],
+          }
+    SafeFailure:
+      type: object
+      additionalProperties: false
+      required: [code, message, retryable, fingerprint]
+      properties:
+        code: { $ref: '#/components/schemas/ErrorCode' }
+        message: { type: string, maxLength: 500 }
+        retryable: { type: boolean }
+        fingerprint: { type: string, pattern: '^err_[a-f0-9]{16,64}$' }
+    AuditPage:
+      type: object
+      additionalProperties: false
+      required: [request_id, operation_id, events]
+      properties:
+        request_id: { type: string }
+        operation_id: { type: string, format: uuid }
+        events:
+          type: array
+          maxItems: 500
+          items: { $ref: '#/components/schemas/AuditEvent' }
+        next_cursor:
+          oneOf:
+            - type: string
+              maxLength: 256
+            - type: 'null'
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          event_id,
+          sequence,
+          occurred_at,
+          type,
+          actor_ref,
+          outcome,
+          safe_payload,
+        ]
+      properties:
+        event_id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1 }
+        occurred_at: { type: string, format: date-time }
+        type: { type: string, maxLength: 100 }
+        actor_ref: { type: string, maxLength: 128 }
+        from_state:
+          oneOf:
+            - $ref: '#/components/schemas/OperationState'
+            - type: 'null'
+        to_state:
+          oneOf:
+            - $ref: '#/components/schemas/OperationState'
+            - type: 'null'
+        action_kind: { type: string, maxLength: 80 }
+        attempt: { type: integer, minimum: 1 }
+        outcome:
+          {
+            type: string,
+            enum:
+              [accepted, denied, started, succeeded, failed, replayed, expired],
+          }
+        safe_payload:
+          type: object
+          maxProperties: 30
+          additionalProperties:
+            type: [string, number, integer, boolean, 'null']
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, request_id, retryable]
+          properties:
+            code: { $ref: '#/components/schemas/ErrorCode' }
+            message: { type: string, maxLength: 500 }
+            request_id: { type: string }
+            retryable: { type: boolean }
+            retry_after_seconds: { type: integer, minimum: 1 }
+            details:
+              type: array
+              maxItems: 20
+              items:
+                type: object
+                additionalProperties: false
+                required: [reason]
+                properties:
+                  field: { type: string, maxLength: 120 }
+                  reason: { type: string, maxLength: 120 }
+    ErrorCode:
+      type: string
+      enum:
+        [
+          INVALID_REQUEST,
+          UNAUTHORIZED,
+          FORBIDDEN,
+          NOT_FOUND,
+          POLICY_DENIED,
+          NAMING_CONFLICT,
+          QUOTA_EXCEEDED,
+          IDEMPOTENCY_KEY_REUSED,
+          PLAN_STALE,
+          APPROVAL_REQUIRED,
+          APPROVAL_EXPIRED,
+          INVALID_STATE_TRANSITION,
+          OPERATION_LOCKED,
+          DRIVER_UNAVAILABLE,
+          EXECUTION_FAILED,
+          VERIFICATION_FAILED,
+          ROLLBACK_NOT_SAFE,
+          MANUAL_INTERVENTION_REQUIRED,
+          RATE_LIMITED,
+          INTERNAL_ERROR,
+        ]
