@@ -4,7 +4,7 @@
 - Task: `t_8967bde6`
 - Issue de QA: `JE4NVRG/je4ndev-platform-core#7`
 - Base revisada: `project-center-v2/base-20260811` (`8e62b3169afa72032fa828b5b66f6c30da29a383`)
-- Veredito: **NO-GO para consolidar o Gate 3**
+- Veredito atual: **GO para consolidar o Gate 3 após o segundo reteste; não autoriza operação ou produção**
 - Escopo operacional: somente leitura; nenhum banco, role, secret, Docker, rede ou produção foi alterado
 
 ## 1. Resumo executivo
@@ -298,3 +298,90 @@ As sete mutações referenciam o header obrigatório. Sua descrição determina 
 | GO para consolidação do Gate 3 | **NO-GO** | não consolidar PRs #1–#4 enquanto PCV2-QA-003 permanecer divergente |
 
 **Decisão final do reteste: NO-GO. Cinco de seis achados foram corrigidos; PCV2-QA-003 permanece bloqueante para consolidação.**
+
+## 8. Segundo reteste — SecretRef opaca — 2026-08-11
+
+### 8.1 Escopo, método e heads SSH
+
+Task de reteste: `t_1906b882`. Issue de acompanhamento: `JE4NVRG/je4ndev-platform-core#20`.
+
+O segundo reteste buscou as heads corrigidas diretamente por Git SSH, sem GitHub API, browser ou credencial HTTP. Os refs locais e remotos foram comparados antes dos testes:
+
+| PR | Branch | HEAD remoto verificado por SSH |
+| --- | --- | --- |
+| #1 | `project-center-v2/prd` | `a743bbdaf60ad068a6dc2be8e328a067ee071b58` |
+| #2 | `project-center-v2/spec` | `e330a83a5570a7c917d1f4c38cdddb7fdb0411a0` |
+| #3 | `project-center-v2/security` | `5854da43eabc8b0de46cfb58d6ec183812406856` |
+| #4 | `project-center-v2/ux` | `4a291a039e6191bda53f9beec89fcc02af865713` |
+
+Comandos principais reproduzíveis:
+
+```bash
+git fetch git@github.com:JE4NVRG/hermes-workspace.git \
+  project-center-v2/prd:refs/remotes/je4n/project-center-v2/prd \
+  project-center-v2/spec:refs/remotes/je4n/project-center-v2/spec \
+  project-center-v2/security:refs/remotes/je4n/project-center-v2/security \
+  project-center-v2/ux:refs/remotes/je4n/project-center-v2/ux
+git ls-remote git@github.com:JE4NVRG/hermes-workspace.git \
+  refs/heads/project-center-v2/prd refs/heads/project-center-v2/spec \
+  refs/heads/project-center-v2/security refs/heads/project-center-v2/ux
+node scripts/project-center-v2-discovery-retest.mjs
+npx --yes @redocly/cli@1.34.5 lint \
+  <(git show je4n/project-center-v2/spec:specs/contracts/project-center-v2.openapi.yaml)
+npx --yes prettier@3.8.1 --check \
+  docs/qa/project-center-v2-discovery-review.md scripts/project-center-v2-discovery-retest.mjs
+npx --yes eslint@10.2.0 scripts/project-center-v2-discovery-retest.mjs
+git diff --check
+```
+
+### 8.2 PCV2-QA-003 — PASS — contrato opaco e não derivável
+
+O achado foi corrigido na fonte canônica e nas projeções:
+
+- OpenAPI `SecretRef` exige `sref_` seguido de 43–128 caracteres base64url, `minLength: 48`, `maxLength: 133` e pelo menos 256 bits CSPRNG;
+- `ArtifactRef` aplica condicionalmente `#/components/schemas/SecretRef` quando `type = secret_ref`, em vez de aceitar uma referência genérica;
+- ADR, spec, threat model e UX definem emissão exclusivamente server-side pelo broker e proíbem construir, analisar ou derivar o token de `project_id`, `project_uuid`, UUID, slug, purpose, provider, locator ou path;
+- o broker persiste digest e binding interno protegido de forma durável e atômica antes de publicar o artefato;
+- retry idempotente recupera a referência persistida; rotação emite nova referência aleatória;
+- token integral e binding privado são redigidos de UI, DOM, URL, clipboard, export, suporte, logs, traces, métricas, erros e auditoria;
+- o scanner encontrou **0** URIs `secret://`, placeholders deriváveis, paths absolutos e tokens integrais não mascarados nos seis artefatos.
+
+O exemplo `sref_REDACTED_REDACTED_REDACTED_REDACTED_REDACTED` é uma máscara neutra explícita, não uma referência real nem um alias derivável.
+
+### 8.3 Regressão completa dos seis achados
+
+| Achado | Resultado | Evidência automatizada |
+| --- | --- | --- |
+| PCV2-QA-001 | **PASS** | 15 estados, 23 transições válidas e 0 lacunas nas projeções PRD/spec/threat/UX |
+| PCV2-QA-002 | **PASS** | rollback `dry-run/approve/execute`, hash, `approval_id` e segregação destrutiva |
+| PCV2-QA-003 | **PASS** | schema condicional, broker-issued CSPRNG, binding atômico e 0 placeholders/tokens/paths expostos |
+| PCV2-QA-004 | **PASS** | `default: deny`, 5 roles, 9 operações e 0 inconsistências de scopes/ownership |
+| PCV2-QA-005 | **PASS** | 7/7 mutações exigem `Idempotency-Key` client-owned antes do primeiro POST |
+| PCV2-QA-006 | **PASS** | provisionamento e rollback usam `oneOf` discriminado para approve/reject |
+
+### 8.4 Gates técnicos reexecutados
+
+| Gate | Resultado |
+| --- | --- |
+| OpenAPI 3.1 parse e `$ref` locais | **PASS** — 135 refs, 0 não resolvidas |
+| `operationId` e parâmetros de path | **PASS** — 9 IDs únicos, 0 ausências |
+| Referências dos seis artefatos nos refs Git | **PASS** — 6/6 resolvidas por `git cat-file -e` |
+| Redocly CLI 1.34.5 | **PASS** — API description valid |
+| Estados e projeções | **PASS** — 15 estados, 23 transições, 0 inconsistências/lacunas |
+| RBAC | **PASS** — default deny, 5 roles, 9 operações cobertas |
+| Idempotência | **PASS** — 7 mutações cobertas |
+| Rollback e approve/reject | **PASS** — contratos segregados e discriminados |
+| SecretRef schema/projeções | **PASS** — contrato opaco em PRD/ADR/OpenAPI/spec/threat/UX |
+| Placeholder/path/token scan | **PASS** — 0/0/0 |
+| Secret scan dos diffs das quatro branches | **PASS** — 0 hits |
+| Prettier e ESLint dos dois artefatos QA; `git diff --check` | **PASS** |
+
+O reteste permaneceu estritamente documental e contratual. Nenhum banco, role, secret real, Docker, Nginx, DNS, Cloudflare, systemd ou ambiente de produção foi acessado ou alterado.
+
+Como observação de baseline fora do critério desta discovery, os scripts `pnpm run ...` não iniciaram porque o worker expõe Node `v20.20.2`, enquanto o pnpm `11.1.3` instalado exige Node `>=22.13`. A execução direta das ferramentas confirmou build Vite verde, mas a suíte global do checkout possui 38 falhas em 752 testes e o lint global possui erros preexistentes fora dos dois arquivos alterados. O gate scoped deste PR permanece verde: 0 erro de ESLint/Prettier nos artefatos QA.
+
+### 8.5 Veredito
+
+**GO para consolidar o Gate 3.** As versões verificadas dos PRs #1–#4 corrigem PCV2-QA-001 a PCV2-QA-006, inclusive a `SecretRef` opaca emitida pelo broker, e todos os gates aplicáveis estão verdes.
+
+Este GO permite somente a consolidação dos artefatos de discovery nas heads acima. **Não é GO operacional nem autorização de deploy/produção**: implementação, feature flag, dry-run e gates finais de QA/Security permanecem etapas posteriores obrigatórias.

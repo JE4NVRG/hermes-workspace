@@ -289,21 +289,93 @@ for (const [name, text] of Object.entries(texts)) {
       absolutePathHits.push(`${name}:${index + 1}`)
   }
 }
-const secretRefForms = new Set()
-for (const [name, text] of Object.entries(texts)) {
-  for (const match of text.matchAll(/secret:\/\/projects\/<([^>]+)>/g))
-    secretRefForms.add(`${name}:<${match[1]}>`)
-}
-const secretIdentityOk =
-  absolutePathHits.length === 0 &&
-  texts.prd.includes('project_uuid') &&
-  texts.security.includes('project_uuid') &&
-  !texts.spec.includes('secret://projects/<project_id>') &&
-  !texts.ux.includes('secret://projects/<project_id>')
+
+const secretRefSchema = rollbackSchemas.SecretRef
+const artifactRefSchema = rollbackSchemas.ArtifactRef
+const secretRefConditional = artifactRefSchema?.allOf?.find(
+  (entry) => entry?.if?.properties?.type?.const === 'secret_ref',
+)
+const secretRefDescription = secretRefSchema?.description ?? ''
 check(
-  'secret-identity-and-reference',
-  secretIdentityOk,
-  `${absolutePathHits.length} paths absolutos; formas observadas: ${[...secretRefForms].join(', ') || 'nenhuma forma concreta'}`,
+  'secret-ref-schema-and-artifact-contract',
+  secretRefSchema?.type === 'string' &&
+    secretRefSchema?.minLength === 48 &&
+    secretRefSchema?.maxLength === 133 &&
+    secretRefSchema?.pattern === '^sref_[A-Za-z0-9_-]{43,128}$' &&
+    secretRefConditional?.then?.properties?.ref?.$ref ===
+      '#/components/schemas/SecretRef' &&
+    secretRefDescription.includes('server-issued') &&
+    secretRefDescription.includes('256 bits') &&
+    secretRefDescription.includes('CSPRNG') &&
+    secretRefDescription.includes('persiste atomicamente') &&
+    secretRefDescription.includes('binding interno protegido'),
+  'SecretRef sref_ base64url, >=256 bits CSPRNG, server-issued; ArtifactRef condicional e binding atômico',
+)
+
+const projectionRequirements = {
+  prd: [
+    /secret_ref` opaca como único identificador retornável/i,
+    /secret_ref` é um identificador opaco emitido pelo broker/i,
+    /Clientes não a constroem a partir de UUID, `project_id`, slug ou path/i,
+  ],
+  adr: [
+    /SecretRef` é um token opaco, aleatório e emitido exclusivamente pelo secret broker/i,
+    /não contém, codifica ou concatena `project_id`, UUID do projeto, slug, purpose, provider, locator ou path/i,
+    /persistência atômica do digest\/binding interno da `SecretRef` antes de publicar/i,
+  ],
+  spec: [
+    /SecretRef` emitida exclusivamente pelo secret broker/i,
+    /não contém, codifica nem permite derivar `project_id`, UUID do projeto, slug, purpose, provider, locator ou path/i,
+    /broker persiste de forma durável e atômica um registro interno que vincula o digest do token/i,
+  ],
+  security: [
+    /SecretRef` opaca emitida pelo broker/i,
+    /não contém, codifica nem permite derivar `project_id`, `project_uuid`, slug, purpose, provider, locator ou path/i,
+    /broker persiste de forma durável e atômica o digest do token e seu binding interno protegido/i,
+  ],
+  ux: [
+    /UI não constrói, analisa, normaliza nem deriva referência a partir de `project_id`, UUID, slug, purpose, provider, locator ou path/i,
+    /broker emite o token opaco no servidor/i,
+    /persiste atomicamente seu digest e binding privado antes de publicar o artefato/i,
+  ],
+}
+const projectionErrors = []
+for (const [name, requirements] of Object.entries(projectionRequirements)) {
+  requirements.forEach((requirement, index) => {
+    if (!requirement.test(texts[name]))
+      projectionErrors.push(`${name}:regra-${index + 1}`)
+  })
+}
+check(
+  'opaque-secret-ref-projections',
+  projectionErrors.length === 0,
+  `PRD/ADR/spec/threat/UX; ${projectionErrors.length} regras ausentes${projectionErrors.length ? `: ${projectionErrors.join(', ')}` : ''}`,
+)
+
+const derivedPlaceholderHits = []
+const exposedSecretRefHits = []
+for (const [name, text] of Object.entries(texts)) {
+  for (const [index, line] of text.split('\n').entries()) {
+    if (
+      /secret:\/\//i.test(line) ||
+      /(?:SecretRef|secret_ref|sref_).*(?:<project[_-]?(?:id|uuid)>|<uuid>|<slug>|<purpose>|<provider>|<locator>|<path>)/i.test(
+        line,
+      )
+    ) {
+      derivedPlaceholderHits.push(`${name}:${index + 1}`)
+    }
+    for (const match of line.matchAll(/sref_[A-Za-z0-9_-]{43,128}/g)) {
+      if (!match[0].includes('REDACTED'))
+        exposedSecretRefHits.push(`${name}:${index + 1}`)
+    }
+  }
+}
+check(
+  'secret-ref-leak-and-placeholder-scan',
+  absolutePathHits.length === 0 &&
+    derivedPlaceholderHits.length === 0 &&
+    exposedSecretRefHits.length === 0,
+  `${absolutePathHits.length} paths absolutos; ${derivedPlaceholderHits.length} placeholders deriváveis; ${exposedSecretRefHits.length} tokens integrais expostos`,
 )
 
 const secretPatterns = [
