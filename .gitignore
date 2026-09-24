@@ -114,7 +114,10 @@ docs/MODEL_SWITCHER_AUDIT.md
 docs/MODEL_SWITCHER_TESTPLAN.md
 docs/OVERNIGHT-SHIP-REPORT.md
 docs/QA/
+# Exceção exigida pelo plano da v2 (PR 7): docs/security/project-center-v2-independent-review.md
+# é artefato versionado de gate; sem esta negação o git o trata como ignorado.
 docs/security/
+!docs/security/
 SIDEBAR-SPEC.md
 SPEC-*.md
 docs/BETA_*.md
