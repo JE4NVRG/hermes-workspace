@@ -579,7 +579,7 @@ Essas decisões devem ser fechadas nos Gates 3 e 4; não podem ser assumidas sil
 - [Provisionamento de banco por projeto](https://github.com/JE4NVRG/je4ndev-platform-core/blob/main/docs/database-provisioning.md)
 - [Substituição do Supabase](https://github.com/JE4NVRG/je4ndev-platform-core/blob/main/docs/supabase-replacement.md)
 - [je4ndev Platform API](https://github.com/JE4NVRG/je4ndev-platform-core/blob/main/docs/je4ndev-platform-api.md)
-- Contrato canônico: `specs/contracts/project-center-v2.openapi.yaml` no branch `project-center-v2/spec` (commit de baseline `0bbe2492`)
+- Contrato canônico: `specs/contracts/project-center-v2.openapi.yaml` na branch `project-center-v2/spec` — referência por branch + path, sem pin de commit, porque o contrato segue evoluindo. Referência histórica: o head aprovado no Gate 3 foi `e330a83a` e o pacote está consolidado em `project-center-v2/base-20260811`.
 - Especificação funcional: `specs/features/project-center-v2.spec.md` no branch `project-center-v2/spec`
 - ADR do control plane: `docs/adr/0001-project-center-v2-control-plane.md` no branch `project-center-v2/spec`
 - Implementação atual: `src/server/supabase-registry.ts`
@@ -588,3 +588,16 @@ Essas decisões devem ser fechadas nos Gates 3 e 4; não podem ser assumidas sil
 ## 19. Decisão solicitada no Gate 2
 
 Aprovar este PRD como baseline de produto e autorizar avanço para specs, threat model, ADR, OpenAPI e UX. A aprovação não autoriza criar/remover databases, roles, secrets, stacks, redes, DNS ou qualquer mudança em produção.
+
+## 20. Referências
+
+- Especificação funcional: `specs/features/project-center-v2.spec.md`
+- Contrato canônico (OpenAPI): `specs/contracts/project-center-v2.openapi.yaml`
+- ADR do control plane: `docs/adr/0001-project-center-v2-control-plane.md`
+- Threat model: `docs/security/project-center-v2-threat-model.md`
+- UX do provisionamento seguro: `docs/design/project-center-v2-ux.md`
+- Plano de implementação: `docs/plans/project-center-v2-implementation-plan.md`
+- Parecer final de QA (Gate 3): `docs/qa/project-center-v2-final-gate.md`
+- Parecer independente de Security (Gate 3): `docs/security/project-center-v2-independent-review.md`
+
+Todos os paths acima existem no pacote consolidado `project-center-v2/base-20260811`; o contrato e a especificação funcional também são mantidos na branch `project-center-v2/spec`.
