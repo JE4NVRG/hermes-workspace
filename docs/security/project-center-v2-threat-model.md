@@ -42,16 +42,16 @@ Nenhum checkbox, texto `CRIAR <slug>` ou confirmação somente no cliente substi
 
 ### 2.2 Ativos e classificação
 
-| Ativo | Classificação | Impacto de comprometimento |
-|---|---|---|
-| Credencial do provisionador PostgreSQL/Docker/R2 | Crítica | Controle de todos os projetos |
-| Senha/DSN da role app por projeto | Crítica | Dados e disponibilidade do projeto |
-| JWT secrets, anon/service keys e secrets de Auth | Crítica | Falsificação de identidade e bypass de políticas |
-| Dados PostgreSQL, volumes e backups | Crítica/alta | Vazamento, corrupção ou perda permanente |
-| Objetos R2 e credenciais de acesso | Alta | Exfiltração ou destruição de backups |
-| Plano, aprovação, idempotency key e audit trail | Alta | Execução indevida ou não repudiável |
-| Manifesto do projeto e inventário de recursos | Interna | Reconhecimento e confused deputy |
-| Logs, erros e respostas da API | Interna, potencialmente crítica | Vazamento indireto de secrets/topologia |
+| Ativo                                            | Classificação                   | Impacto de comprometimento                       |
+| ------------------------------------------------ | ------------------------------- | ------------------------------------------------ |
+| Credencial do provisionador PostgreSQL/Docker/R2 | Crítica                         | Controle de todos os projetos                    |
+| Senha/DSN da role app por projeto                | Crítica                         | Dados e disponibilidade do projeto               |
+| JWT secrets, anon/service keys e secrets de Auth | Crítica                         | Falsificação de identidade e bypass de políticas |
+| Dados PostgreSQL, volumes e backups              | Crítica/alta                    | Vazamento, corrupção ou perda permanente         |
+| Objetos R2 e credenciais de acesso               | Alta                            | Exfiltração ou destruição de backups             |
+| Plano, aprovação, idempotency key e audit trail  | Alta                            | Execução indevida ou não repudiável              |
+| Manifesto do projeto e inventário de recursos    | Interna                         | Reconhecimento e confused deputy                 |
+| Logs, erros e respostas da API                   | Interna, potencialmente crítica | Vazamento indireto de secrets/topologia          |
 
 ## 3. Arquitetura de segurança proposta
 
@@ -78,30 +78,30 @@ A API pública nunca deve executar `psql`, `docker compose`, shell ou operaçõe
 
 ### 3.1 Trust boundaries
 
-| Boundary | Origem → destino | Risco dominante | Controles obrigatórios |
-|---|---|---|---|
-| B1 | Browser/agente → API | spoofing, CSRF, BOLA, replay, payload hostil | TLS, auth fail-closed, RBAC/ABAC, `Content-Type` JSON, CSRF/origin check, limite de corpo, rate limit, schema estrito |
-| B2 | API → estado do control plane | cross-project, tampering, race | project scope no servidor, constraints únicas, transação, optimistic version, audit append-only |
-| B3 | API → provisionador | confused deputy, command injection, replay | processo/serviço separado, capability curta e single-use, plano assinado/hasheado, allowlist, sem shell |
-| B4 | Provisionador → PostgreSQL | SQL/identifier injection, privilégio excessivo | driver parametrizado para valores, identifiers derivados/quotados, role administrativa dedicada e limitada, loopback |
-| B5 | Provisionador → Docker | host takeover, traversal, colisão de Compose | rootless, socket não exposto à API, paths canônicos sob raiz fixa, project name/rede/volumes exclusivos, drop capabilities |
-| B6 | Provisionador → R2 | overwrite/cross-prefix/exfiltração | credencial scoped, prefixo imutável por project UUID, SSE, checksums, object lock/versioning quando disponível |
-| B7 | Provisionador → secret store/runtime | secret leak, symlink/race, permissões | criação atômica `O_CREAT|O_EXCL|O_NOFOLLOW`, diretório 0700, arquivo 0600, owner verificado, redaction |
-| B8 | App A → PostgreSQL/stack B | cross-project/BOLA | database e role exclusivos, CONNECT revogado, `pg_hba`/network policy, credenciais e rede distintas |
-| B9 | Backup/restore → projeto | restore cruzado, corrupção, rollback destrutivo | manifesto assinado, project UUID/mode verificados, restore em destino vazio/teste, aprovação separada |
-| B10 | Logs/monitoramento → operadores/agentes | divulgação de secrets/PII | allowlist de campos, redaction estrutural, retenção e acesso mínimo, nenhum payload/env bruto |
+| Boundary | Origem → destino                        | Risco dominante                                 | Controles obrigatórios                                                                                                     |
+| -------- | --------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| B1       | Browser/agente → API                    | spoofing, CSRF, BOLA, replay, payload hostil    | TLS, auth fail-closed, RBAC/ABAC, `Content-Type` JSON, CSRF/origin check, limite de corpo, rate limit, schema estrito      |
+| B2       | API → estado do control plane           | cross-project, tampering, race                  | project scope no servidor, constraints únicas, transação, optimistic version, audit append-only                            |
+| B3       | API → provisionador                     | confused deputy, command injection, replay      | processo/serviço separado, capability curta e single-use, plano assinado/hasheado, allowlist, sem shell                    |
+| B4       | Provisionador → PostgreSQL              | SQL/identifier injection, privilégio excessivo  | driver parametrizado para valores, identifiers derivados/quotados, role administrativa dedicada e limitada, loopback       |
+| B5       | Provisionador → Docker                  | host takeover, traversal, colisão de Compose    | rootless, socket não exposto à API, paths canônicos sob raiz fixa, project name/rede/volumes exclusivos, drop capabilities |
+| B6       | Provisionador → R2                      | overwrite/cross-prefix/exfiltração              | credencial scoped, prefixo imutável por project UUID, SSE, checksums, object lock/versioning quando disponível             |
+| B7       | Provisionador → secret store/runtime    | secret leak, symlink/race, permissões           | criação atômica `O_CREAT\|O_EXCL\|O_NOFOLLOW`, diretório 0700, arquivo 0600, owner verificado, redaction                   |
+| B8       | App A → PostgreSQL/stack B              | cross-project/BOLA                              | database e role exclusivos, CONNECT revogado, `pg_hba`/network policy, credenciais e rede distintas                        |
+| B9       | Backup/restore → projeto                | restore cruzado, corrupção, rollback destrutivo | manifesto assinado, project UUID/mode verificados, restore em destino vazio/teste, aprovação separada                      |
+| B10      | Logs/monitoramento → operadores/agentes | divulgação de secrets/PII                       | allowlist de campos, redaction estrutural, retenção e acesso mínimo, nenhum payload/env bruto                              |
 
 ## 4. Identidades, roles e segregação de funções
 
 ### 4.1 Roles e scopes canônicos do control plane
 
-| Role canônica | Scopes canônicos | `operationId` canônicos | Explicitamente proibido |
-|---|---|---|---|
-| `project_reader` | `project:read` | `getProjectOperation` | secrets, audit privilegiado e side effects |
-| `project_operator` | `project:plan`, `project:execute`, `project:verify`, `project:rollback` | `createProjectDryRun`, `executeProjectOperation`, `verifyProjectOperation`, `createProjectRollbackDryRun`, `executeProjectRollback` | aprovar a própria operação ou enviar comandos livres |
-| `project_approver` | `project:approve` | `decideProjectOperationApproval`, `decideProjectRollbackApproval` | alterar plano, executar worker ou aprovar como token de agente |
-| `project_auditor` | `project:audit` | `listProjectOperationAudit` | secret material ou side effects |
-| `platform_worker` | `project:worker` | nenhuma operação HTTP pública; somente consumo interno | login interativo, API geral ou conteúdo arbitrário |
+| Role canônica      | Scopes canônicos                                                        | `operationId` canônicos                                                                                                             | Explicitamente proibido                                        |
+| ------------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `project_reader`   | `project:read`                                                          | `getProjectOperation`                                                                                                               | secrets, audit privilegiado e side effects                     |
+| `project_operator` | `project:plan`, `project:execute`, `project:verify`, `project:rollback` | `createProjectDryRun`, `executeProjectOperation`, `verifyProjectOperation`, `createProjectRollbackDryRun`, `executeProjectRollback` | aprovar a própria operação ou enviar comandos livres           |
+| `project_approver` | `project:approve`                                                       | `decideProjectOperationApproval`, `decideProjectRollbackApproval`                                                                   | alterar plano, executar worker ou aprovar como token de agente |
+| `project_auditor`  | `project:audit`                                                         | `listProjectOperationAudit`                                                                                                         | secret material ou side effects                                |
+| `platform_worker`  | `project:worker`                                                        | nenhuma operação HTTP pública; somente consumo interno                                                                              | login interativo, API geral ou conteúdo arbitrário             |
 
 O mapeamento role → scope → `operationId` e cada `x-required-scopes` pertencem ao `x-rbac-policy` do OpenAPI e usam `default: deny` em todos os ambientes. Nenhum agente possui `project:approve`, credencial administrativa PostgreSQL, acesso ao Docker socket ou credencial R2 global. Em produção, o aprovador deve ser humano e diferente do solicitante. Em rollback destrutivo, também deve diferir do solicitante da operação original; a autorização é revalidada em `execute` e `rollback/execute`.
 
@@ -187,25 +187,25 @@ Eventos registram `actor_ref`, `project_uuid`, ação, `plan_hash` ou `rollback_
 
 ## 6. STRIDE e cenários prioritários
 
-| STRIDE | Componente | Cenário/prova de explorabilidade | Severidade | Mitigação/verificação |
-|---|---|---|---|---|
-| Spoofing | API | Sessão comum chama endpoint administrativo; atualmente `isAuthenticated` não distingue papéis e permite acesso quando nenhuma senha está configurada | **Crítica** | auth fail-closed, identidade forte, RBAC/ABAC por rota e projeto; testes sem config/sem role/role errada = 401/403 sem side effect |
-| Spoofing | Approval | Reuso/roubo de `approval_id` executa outro plano | **Crítica** | token single-use curto e vinculado ao hash exato/actor/project UUID/hash de idempotência; teste de replay e troca de campo |
-| Tampering | Identifiers/SQL | slug/schema/path malicioso altera SQL ou escapa diretório | **Crítica** | schema estrito, derivação server-side, driver parametrizado, quoting seguro e path confinement; fuzz de quotes, Unicode, separators, NUL e `..` |
-| Tampering | Plan | Payload muda depois da aprovação | **Crítica** | plano canônico imutável e hash; provisionador recalcula e compara antes de cada execução |
-| Repudiation | Control plane | Operador nega criação/rotação/restore | **Alta** | audit append-only com identidade, aprovação e hashes; correlação ponta a ponta |
-| Information disclosure | Erros/logs/UI | stderr, argv, env ou snapshot expõe DSN/keys; a implementação atual repassa parte do erro PostgreSQL | **Alta** | erros codificados, redaction estrutural, nenhum env/command bruto; testes com canary secrets em todas as saídas |
-| Information disclosure | Context API | BOLA permite agente A obter schema/metadata B | **Alta** | autorização server-side por project membership/scope; matriz A × B |
-| DoS | Provisionador | requisições concorrentes criam stacks/volumes ou esgotam Postgres/R2 | **Alta** | quotas, rate limit, fila limitada, lock, preflight de recursos, circuit breaker e cancelamento seguro |
-| Elevation | PostgreSQL | role app recebe membership/owner/default grants e alcança outros bancos | **Crítica** | atributos negativos explícitos, revoke `PUBLIC`, role audit por catálogo, testes reais A × B |
-| Elevation | Docker | API com Docker socket equivale a host root e aceita compose/path controlado | **Crítica** | socket apenas no provisionador rootless dedicado, templates fixos, allowlist e sandbox |
-| Confused deputy | Provisionador | agente autorizado em A induz provisionador privilegiado a operar B ou prefixo R2 B | **Crítica** | escopo vem da capability e registro; recursos derivados de UUID; nunca confiar em target fornecido pelo cliente |
-| Cross-project | PostgreSQL | `CONNECT`, foreign server, dblink, shared role ou search_path cruza A/B | **Crítica** | revokes, sem extensões de conexão, egress restrito, roles exclusivas e testes negativos |
-| Cross-project | Supabase | JWT/service key, rede, volume ou Storage compartilhado cruza A/B | **Crítica** | material criptográfico, rede, data path e domínio exclusivos; inventário e probes A × B |
-| Race/TOCTOU | Secret/path | symlink troca destino entre validação e escrita | **Alta** | open atômico sem seguir link, owner/mode, rename atômico e raiz não gravável por terceiros |
-| Race/idempotência | API/fila | duas execuções criam role/database/stack duplicado ou uma apaga recurso da outra | **Alta** | constraint + fingerprint + advisory/distributed lock + resource ownership tags |
-| Rollback parcial | Workflow | DB criado e secret falha; retry colide ou compensação remove recurso antigo | **Alta** | journal durável, compensação baseada em ownership desta operation ID; conflito sem prova segura de ownership vai para `manual_intervention_required`, retry de `failed` volta a `queued` ou segue para `rollback_pending`; nunca delete cego |
-| Tampering | Backup/R2 | path/prefixo cruzado sobrescreve backup B ou restore A em B | **Crítica** | prefixo derivado, IAM scoped, manifest project-bound, checksum/assinatura e restore negativo A × B |
+| STRIDE                 | Componente      | Cenário/prova de explorabilidade                                                                                                                     | Severidade  | Mitigação/verificação                                                                                                                                                                                                                        |
+| ---------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spoofing               | API             | Sessão comum chama endpoint administrativo; atualmente `isAuthenticated` não distingue papéis e permite acesso quando nenhuma senha está configurada | **Crítica** | auth fail-closed, identidade forte, RBAC/ABAC por rota e projeto; testes sem config/sem role/role errada = 401/403 sem side effect                                                                                                           |
+| Spoofing               | Approval        | Reuso/roubo de `approval_id` executa outro plano                                                                                                     | **Crítica** | token single-use curto e vinculado ao hash exato/actor/project UUID/hash de idempotência; teste de replay e troca de campo                                                                                                                   |
+| Tampering              | Identifiers/SQL | slug/schema/path malicioso altera SQL ou escapa diretório                                                                                            | **Crítica** | schema estrito, derivação server-side, driver parametrizado, quoting seguro e path confinement; fuzz de quotes, Unicode, separators, NUL e `..`                                                                                              |
+| Tampering              | Plan            | Payload muda depois da aprovação                                                                                                                     | **Crítica** | plano canônico imutável e hash; provisionador recalcula e compara antes de cada execução                                                                                                                                                     |
+| Repudiation            | Control plane   | Operador nega criação/rotação/restore                                                                                                                | **Alta**    | audit append-only com identidade, aprovação e hashes; correlação ponta a ponta                                                                                                                                                               |
+| Information disclosure | Erros/logs/UI   | stderr, argv, env ou snapshot expõe DSN/keys; a implementação atual repassa parte do erro PostgreSQL                                                 | **Alta**    | erros codificados, redaction estrutural, nenhum env/command bruto; testes com canary secrets em todas as saídas                                                                                                                              |
+| Information disclosure | Context API     | BOLA permite agente A obter schema/metadata B                                                                                                        | **Alta**    | autorização server-side por project membership/scope; matriz A × B                                                                                                                                                                           |
+| DoS                    | Provisionador   | requisições concorrentes criam stacks/volumes ou esgotam Postgres/R2                                                                                 | **Alta**    | quotas, rate limit, fila limitada, lock, preflight de recursos, circuit breaker e cancelamento seguro                                                                                                                                        |
+| Elevation              | PostgreSQL      | role app recebe membership/owner/default grants e alcança outros bancos                                                                              | **Crítica** | atributos negativos explícitos, revoke `PUBLIC`, role audit por catálogo, testes reais A × B                                                                                                                                                 |
+| Elevation              | Docker          | API com Docker socket equivale a host root e aceita compose/path controlado                                                                          | **Crítica** | socket apenas no provisionador rootless dedicado, templates fixos, allowlist e sandbox                                                                                                                                                       |
+| Confused deputy        | Provisionador   | agente autorizado em A induz provisionador privilegiado a operar B ou prefixo R2 B                                                                   | **Crítica** | escopo vem da capability e registro; recursos derivados de UUID; nunca confiar em target fornecido pelo cliente                                                                                                                              |
+| Cross-project          | PostgreSQL      | `CONNECT`, foreign server, dblink, shared role ou search_path cruza A/B                                                                              | **Crítica** | revokes, sem extensões de conexão, egress restrito, roles exclusivas e testes negativos                                                                                                                                                      |
+| Cross-project          | Supabase        | JWT/service key, rede, volume ou Storage compartilhado cruza A/B                                                                                     | **Crítica** | material criptográfico, rede, data path e domínio exclusivos; inventário e probes A × B                                                                                                                                                      |
+| Race/TOCTOU            | Secret/path     | symlink troca destino entre validação e escrita                                                                                                      | **Alta**    | open atômico sem seguir link, owner/mode, rename atômico e raiz não gravável por terceiros                                                                                                                                                   |
+| Race/idempotência      | API/fila        | duas execuções criam role/database/stack duplicado ou uma apaga recurso da outra                                                                     | **Alta**    | constraint + fingerprint + advisory/distributed lock + resource ownership tags                                                                                                                                                               |
+| Rollback parcial       | Workflow        | DB criado e secret falha; retry colide ou compensação remove recurso antigo                                                                          | **Alta**    | journal durável, compensação baseada em ownership desta operation ID; conflito sem prova segura de ownership vai para `manual_intervention_required`, retry de `failed` volta a `queued` ou segue para `rollback_pending`; nunca delete cego |
+| Tampering              | Backup/R2       | path/prefixo cruzado sobrescreve backup B ou restore A em B                                                                                          | **Crítica** | prefixo derivado, IAM scoped, manifest project-bound, checksum/assinatura e restore negativo A × B                                                                                                                                           |
 
 ## 7. Vulnerabilidades concretas da implementação atual
 
@@ -319,15 +319,15 @@ Em produção e para ação destrutiva, o aprovador humano deve diferir do solic
 
 ### 9.4 Saga e compensações
 
-| Etapa | Postcondição | Compensação permitida |
-|---|---|---|
-| Reservar projeto/names | registro único `EXECUTING` | liberar apenas reserva da mesma operation ID |
-| Gerar secret | secret existe com owner/mode corretos | destruir apenas versão ainda não injetada |
-| Criar role/database | atributos e owner auditados | remover somente se criados por esta operação, vazios e sem dependências |
-| Criar stack/volumes | health e ownership verificados | parar/remover somente recursos tagueados desta operação |
-| Configurar backup/R2 | upload canário/checksum/policy passam | remover somente canário e config da operação |
-| Publicar runtime | app usa credencial nova e health passa | voltar à versão anterior ainda válida |
-| Finalizar | evidências persistidas e secrets redigidos | não aplicável |
+| Etapa                  | Postcondição                               | Compensação permitida                                                   |
+| ---------------------- | ------------------------------------------ | ----------------------------------------------------------------------- |
+| Reservar projeto/names | registro único `EXECUTING`                 | liberar apenas reserva da mesma operation ID                            |
+| Gerar secret           | secret existe com owner/mode corretos      | destruir apenas versão ainda não injetada                               |
+| Criar role/database    | atributos e owner auditados                | remover somente se criados por esta operação, vazios e sem dependências |
+| Criar stack/volumes    | health e ownership verificados             | parar/remover somente recursos tagueados desta operação                 |
+| Configurar backup/R2   | upload canário/checksum/policy passam      | remover somente canário e config da operação                            |
+| Publicar runtime       | app usa credencial nova e health passa     | voltar à versão anterior ainda válida                                   |
+| Finalizar              | evidências persistidas e secrets redigidos | não aplicável                                                           |
 
 Compensação nunca tenta “adivinhar” estado. Falha de compensação gera `manual_intervention_required`, alerta e bloqueio; não continua nem declara sucesso parcial.
 
@@ -386,28 +386,28 @@ Injetar canary secrets conhecidos em fixtures isoladas e provar ausência em res
 
 ### 12.1 API/control plane
 
-| ID | Teste | Resultado obrigatório |
-|---|---|---|
-| API-01 | sem senha/provider/RBAC configurado | 401/503 fail-closed; zero side effect |
-| API-02 | sessão válida sem role `project_operator` ou scope `project:plan` | 403; zero side effect |
-| API-03 | operador A usa alias ou `project_uuid` B em path/body/query | 403/404 uniforme; nenhum metadata B |
-| API-04 | content type form/text, origin hostil, CSRF e body oversized | rejeição antes de parse/side effect |
-| API-05 | approval expirada, usada, de outro actor/projeto ou plan hash | rejeição; audit event redigido |
-| API-06 | mesma idempotency key, mesmo payload, N retries concorrentes | um side effect; mesmo resultado |
-| API-07 | key client-owned criada antes do primeiro POST; mesma key com payload diferente | replay seguro no primeiro caso; `409 IDEMPOTENCY_KEY_REUSED` no segundo; nenhuma segunda execução |
-| API-08 | slugs com quotes, `..`, slash, backslash, NUL, Unicode confusável e encoding duplo | 400; nenhum SQL/path/process iniciado |
-| API-09 | canary secret em erro de dependência | resposta/log/audit sem canary/DSN/argv/stack |
-| API-10 | flood de planos/execuções | rate limit/quota; fila e host permanecem saudáveis |
-| API-11 | alias/slug A reciclado ou enviado com `project_uuid` B | 403/409; ownership e recursos continuam vinculados ao UUID original |
-| API-12 | resposta/status/erro/audit de operação com secret criado | somente `secret_ref` opaca; nenhum valor ou path físico |
-| API-13 | approve e reject de provisionamento/rollback | ramos `oneOf` discriminados; approve exige hash/confirmação, reject exige motivo |
-| API-14 | rollback dry-run/approve/execute com hash, ator ou revisão trocados | rejeição antes do lease e de qualquer side effect |
-| API-15 | token sem scope requerido chama cada `operationId` | 403 uniforme conforme `x-rbac-policy`; zero side effect |
-| API-16 | cliente envia URI determinística legada, UUID, `project_id`, slug, purpose, provider, locator ou path como referência, ou `sref_` fora do formato/entropia contratual | rejeição antes da resolução; nenhum binding, lookup ou side effect |
-| API-17 | duas emissões independentes ou rotação para o mesmo projeto/purpose; retry idempotente da mesma operação | emissões/rotação produzem tokens aleatórios distintos; retry recupera a referência já persistida sem alias determinístico |
-| API-18 | referência válida de A é apresentada por ator/projeto B, revogada, expirada ou sem scope | 403/404 uniforme; nenhum secret, binding, locator, fingerprint correlacionável ou metadata de A |
-| API-19 | falha antes/durante a persistência do digest e binding privado | nenhum `ArtifactRef` publicado; estado reconciliável e zero token órfão observável |
-| API-20 | token de agente (`actor_type: agent`) com scope `project:approve` chama `decideProjectOperationApproval` ou `decideProjectRollbackApproval` em operação de produção | `403 FORBIDDEN` tipado conforme `x-segregation` (`policy: production_approval`/`destructive_rollback`, `actor_type_required: human`); decisão não registrada, estado inalterado e zero side effect. Mesma resposta para `actor_type: worker`, mesmo acumulando outros scopes |
+| ID     | Teste                                                                                                                                                                 | Resultado obrigatório                                                                                                                                                                                                                                                        |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API-01 | sem senha/provider/RBAC configurado                                                                                                                                   | 401/503 fail-closed; zero side effect                                                                                                                                                                                                                                        |
+| API-02 | sessão válida sem role `project_operator` ou scope `project:plan`                                                                                                     | 403; zero side effect                                                                                                                                                                                                                                                        |
+| API-03 | operador A usa alias ou `project_uuid` B em path/body/query                                                                                                           | 403/404 uniforme; nenhum metadata B                                                                                                                                                                                                                                          |
+| API-04 | content type form/text, origin hostil, CSRF e body oversized                                                                                                          | rejeição antes de parse/side effect                                                                                                                                                                                                                                          |
+| API-05 | approval expirada, usada, de outro actor/projeto ou plan hash                                                                                                         | rejeição; audit event redigido                                                                                                                                                                                                                                               |
+| API-06 | mesma idempotency key, mesmo payload, N retries concorrentes                                                                                                          | um side effect; mesmo resultado                                                                                                                                                                                                                                              |
+| API-07 | key client-owned criada antes do primeiro POST; mesma key com payload diferente                                                                                       | replay seguro no primeiro caso; `409 IDEMPOTENCY_KEY_REUSED` no segundo; nenhuma segunda execução                                                                                                                                                                            |
+| API-08 | slugs com quotes, `..`, slash, backslash, NUL, Unicode confusável e encoding duplo                                                                                    | 400; nenhum SQL/path/process iniciado                                                                                                                                                                                                                                        |
+| API-09 | canary secret em erro de dependência                                                                                                                                  | resposta/log/audit sem canary/DSN/argv/stack                                                                                                                                                                                                                                 |
+| API-10 | flood de planos/execuções                                                                                                                                             | rate limit/quota; fila e host permanecem saudáveis                                                                                                                                                                                                                           |
+| API-11 | alias/slug A reciclado ou enviado com `project_uuid` B                                                                                                                | 403/409; ownership e recursos continuam vinculados ao UUID original                                                                                                                                                                                                          |
+| API-12 | resposta/status/erro/audit de operação com secret criado                                                                                                              | somente `secret_ref` opaca; nenhum valor ou path físico                                                                                                                                                                                                                      |
+| API-13 | approve e reject de provisionamento/rollback                                                                                                                          | ramos `oneOf` discriminados; approve exige hash/confirmação, reject exige motivo                                                                                                                                                                                             |
+| API-14 | rollback dry-run/approve/execute com hash, ator ou revisão trocados                                                                                                   | rejeição antes do lease e de qualquer side effect                                                                                                                                                                                                                            |
+| API-15 | token sem scope requerido chama cada `operationId`                                                                                                                    | 403 uniforme conforme `x-rbac-policy`; zero side effect                                                                                                                                                                                                                      |
+| API-16 | cliente envia URI determinística legada, UUID, `project_id`, slug, purpose, provider, locator ou path como referência, ou `sref_` fora do formato/entropia contratual | rejeição antes da resolução; nenhum binding, lookup ou side effect                                                                                                                                                                                                           |
+| API-17 | duas emissões independentes ou rotação para o mesmo projeto/purpose; retry idempotente da mesma operação                                                              | emissões/rotação produzem tokens aleatórios distintos; retry recupera a referência já persistida sem alias determinístico                                                                                                                                                    |
+| API-18 | referência válida de A é apresentada por ator/projeto B, revogada, expirada ou sem scope                                                                              | 403/404 uniforme; nenhum secret, binding, locator, fingerprint correlacionável ou metadata de A                                                                                                                                                                              |
+| API-19 | falha antes/durante a persistência do digest e binding privado                                                                                                        | nenhum `ArtifactRef` publicado; estado reconciliável e zero token órfão observável                                                                                                                                                                                           |
+| API-20 | token de agente (`actor_type: agent`) com scope `project:approve` chama `decideProjectOperationApproval` ou `decideProjectRollbackApproval` em operação de produção   | `403 FORBIDDEN` tipado conforme `x-segregation` (`policy: production_approval`/`destructive_rollback`, `actor_type_required: human`); decisão não registrada, estado inalterado e zero side effect. Mesma resposta para `actor_type: worker`, mesmo acumulando outros scopes |
 
 Os casos de decisão (API-13, API-14 e API-20) pressupõem as claims canônicas de ator exigidas por `bearerAuth` no contrato — `x-rbac-policy.actor-claims`: `subject: sub`, `actor_type: actor_type`, `allowed_values: [human, agent, worker]`, `required: [subject, actor_type]`. A segregação “só humano aprova” é assim verificável no próprio token, e não por convenção de papel: `x-segregation` fixa `actor_type_required: human` e `non_human_actor_response { status: 403, code: FORBIDDEN }` nas duas operações de decisão.
 
@@ -415,35 +415,35 @@ Os casos de decisão (API-13, API-14 e API-20) pressupõem as claims canônicas 
 
 Criar databases e roles efêmeros A e B em ambiente de teste aprovado, nunca produção, e provar:
 
-| ID | Credencial/origem | Alvo | Resultado obrigatório |
-|---|---|---|---|
-| PG-01 | app A | database A, operações allowlisted | sucesso |
-| PG-02 | app A | `CONNECT` database B | falha `permission denied` |
-| PG-03 | app A conectada em A | objetos/schema B via qualquer nome/search_path | inexistente/negado |
-| PG-04 | app A | `CREATE DATABASE/ROLE`, `ALTER ROLE`, extensão | negado |
-| PG-05 | app A | `SET ROLE` admin/B, membership herdada | negado |
-| PG-06 | migration A | database B | negado |
-| PG-07 | `PUBLIC`/usuário sem grant | CONNECT/CREATE em A ou B | negado |
-| PG-08 | catálogo | atributos de app A/B | todos os flags admin falsos, roles distintas |
-| PG-09 | tentativa `dblink`/FDW/copy program | host/outro DB | extensão ausente ou permissão negada |
-| PG-10 | 2 creates concorrentes A | catálogo/recursos | exatamente um conjunto consistente |
+| ID    | Credencial/origem                   | Alvo                                           | Resultado obrigatório                        |
+| ----- | ----------------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| PG-01 | app A                               | database A, operações allowlisted              | sucesso                                      |
+| PG-02 | app A                               | `CONNECT` database B                           | falha `permission denied`                    |
+| PG-03 | app A conectada em A                | objetos/schema B via qualquer nome/search_path | inexistente/negado                           |
+| PG-04 | app A                               | `CREATE DATABASE/ROLE`, `ALTER ROLE`, extensão | negado                                       |
+| PG-05 | app A                               | `SET ROLE` admin/B, membership herdada         | negado                                       |
+| PG-06 | migration A                         | database B                                     | negado                                       |
+| PG-07 | `PUBLIC`/usuário sem grant          | CONNECT/CREATE em A ou B                       | negado                                       |
+| PG-08 | catálogo                            | atributos de app A/B                           | todos os flags admin falsos, roles distintas |
+| PG-09 | tentativa `dblink`/FDW/copy program | host/outro DB                                  | extensão ausente ou permissão negada         |
+| PG-10 | 2 creates concorrentes A            | catálogo/recursos                              | exatamente um conjunto consistente           |
 
 Capturar comandos, exit status e assertions sem credenciais. O gate não aceita somente inspeção visual de grants.
 
 ### 12.3 Stack Supabase A × B
 
-| ID | Teste | Resultado obrigatório |
-|---|---|---|
-| ST-01 | container A resolve/conecta serviço DB/Auth/Storage de B | falha por rede/policy |
-| ST-02 | anon JWT A em endpoints B | 401/403 |
-| ST-03 | service key A em B | 401/403, sem metadata/dados B |
-| ST-04 | upload/list/download com credencial A em bucket B | 401/403 |
-| ST-05 | volumes, networks, Compose project, env/JWT/data path | IDs/paths/material exclusivos, sem compartilhamento |
-| ST-06 | parar/remover stack A | stack B permanece saudável e dados intactos |
-| ST-07 | backup A restaurado como B sem fluxo de migração | bloqueado por manifesto |
-| ST-08 | falha após criação de volume/rede | somente recursos da operation A compensados; B intacta |
-| ST-09 | domínio/Host A direcionado a B | rejeitado; certificados/routes sem wildcard perigoso |
-| ST-10 | logs/inspect/config export | nenhum secret real em saída persistida ou API |
+| ID    | Teste                                                    | Resultado obrigatório                                  |
+| ----- | -------------------------------------------------------- | ------------------------------------------------------ |
+| ST-01 | container A resolve/conecta serviço DB/Auth/Storage de B | falha por rede/policy                                  |
+| ST-02 | anon JWT A em endpoints B                                | 401/403                                                |
+| ST-03 | service key A em B                                       | 401/403, sem metadata/dados B                          |
+| ST-04 | upload/list/download com credencial A em bucket B        | 401/403                                                |
+| ST-05 | volumes, networks, Compose project, env/JWT/data path    | IDs/paths/material exclusivos, sem compartilhamento    |
+| ST-06 | parar/remover stack A                                    | stack B permanece saudável e dados intactos            |
+| ST-07 | backup A restaurado como B sem fluxo de migração         | bloqueado por manifesto                                |
+| ST-08 | falha após criação de volume/rede                        | somente recursos da operation A compensados; B intacta |
+| ST-09 | domínio/Host A direcionado a B                           | rejeitado; certificados/routes sem wildcard perigoso   |
+| ST-10 | logs/inspect/config export                               | nenhum secret real em saída persistida ou API          |
 
 ### 12.4 Filesystem/R2/secrets
 
@@ -492,14 +492,14 @@ Drop database/role/volume/stack, restore em produção, rotação de signing key
 
 ## 14. Rastreabilidade dos achados QA
 
-| Achado | Alinhamento neste threat model |
-|---|---|
-| `PCV2-QA-001` | seção 9.1 projeta exatamente o enum/transições de `OperationState.x-allowed-transitions` e remove aliases locais |
-| `PCV2-QA-002` | seção 9.3 exige rollback dry-run/approve/execute, hash próprio, approval nova, drift/ownership e segundo ator |
+| Achado        | Alinhamento neste threat model                                                                                                                                                                               |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PCV2-QA-001` | seção 9.1 projeta exatamente o enum/transições de `OperationState.x-allowed-transitions` e remove aliases locais                                                                                             |
+| `PCV2-QA-002` | seção 9.3 exige rollback dry-run/approve/execute, hash próprio, approval nova, drift/ownership e segundo ator                                                                                                |
 | `PCV2-QA-003` | I-08 e seções 10.1–10.3 exigem `SecretRef` CSPRNG broker-issued, atômica e não derivável; testes API-16–API-19 negam placeholders, parsing, cross-project, tokens inválidos e publicação sem binding privado |
-| `PCV2-QA-004` | seção 4.1 usa roles/scopes do `x-rbac-policy` e referencia `x-required-scopes` como fonte contratual |
-| `PCV2-QA-005` | I-10 e seção 9.2 tornam a `Idempotency-Key` client-owned antes do primeiro request; servidor persiste somente hash |
-| `PCV2-QA-006` | I-04 e testes API-13 exigem `oneOf` discriminado para approve/reject de provisionamento e rollback |
+| `PCV2-QA-004` | seção 4.1 usa roles/scopes do `x-rbac-policy` e referencia `x-required-scopes` como fonte contratual                                                                                                         |
+| `PCV2-QA-005` | I-10 e seção 9.2 tornam a `Idempotency-Key` client-owned antes do primeiro request; servidor persiste somente hash                                                                                           |
+| `PCV2-QA-006` | I-04 e testes API-13 exigem `oneOf` discriminado para approve/reject de provisionamento e rollback                                                                                                           |
 
 ## 15. Critério de saída da discovery
 
