@@ -6,6 +6,7 @@
 - Base revisada: `project-center-v2/base-20260811` (`8e62b3169afa72032fa828b5b66f6c30da29a383`)
 - Veredito atual: **GO para consolidar o Gate 3 após o segundo reteste; não autoriza operação ou produção**
 - Escopo operacional: somente leitura; nenhum banco, role, secret, Docker, rede ou produção foi alterado
+- Correções da onda PCv2/W0 (reteste parametrizado, escopo do scan, ambiente, `.gitignore`): 2026-09-24 — task `t_1b1f55b3`, §9
 
 ## 1. Resumo executivo
 
@@ -348,6 +349,8 @@ O achado foi corrigido na fonte canônica e nas projeções:
 
 O exemplo `sref_REDACTED_REDACTED_REDACTED_REDACTED_REDACTED` é uma máscara neutra explícita, não uma referência real nem um alias derivável.
 
+**Escopo declarado do scan (path absoluto, placeholder derivável, URI `secret://`, token integral):** as contagens desta seção valem para os **6 artefatos contratuais** — PRD, ADR, OpenAPI, spec, threat model e UX —, que são exatamente os arquivos lidos pelo reteste. Este documento de QA **não é alvo do scan**: as citações históricas de `/home/jean/.config/je4ndev/projects/<slug>.env` (§3) e de `secret://projects/<id>/…` (§7.3) são evidência de achados já corrigidos, não credencial, segredo, instrução operacional nem implementação. A afirmação “0 paths absolutos” deve portanto ser lida como escopada aos 6 artefatos contratuais (§9.1).
+
 ### 8.3 Regressão completa dos seis achados
 
 | Achado | Resultado | Evidência automatizada |
@@ -378,10 +381,75 @@ O exemplo `sref_REDACTED_REDACTED_REDACTED_REDACTED_REDACTED` é uma máscara ne
 
 O reteste permaneceu estritamente documental e contratual. Nenhum banco, role, secret real, Docker, Nginx, DNS, Cloudflare, systemd ou ambiente de produção foi acessado ou alterado.
 
-Como observação de baseline fora do critério desta discovery, os scripts `pnpm run ...` não iniciaram porque o worker expõe Node `v20.20.2`, enquanto o pnpm `11.1.3` instalado exige Node `>=22.13`. A execução direta das ferramentas confirmou build Vite verde, mas a suíte global do checkout possui 38 falhas em 752 testes e o lint global possui erros preexistentes fora dos dois arquivos alterados. O gate scoped deste PR permanece verde: 0 erro de ESLint/Prettier nos artefatos QA.
+Como observação de baseline fora do critério desta discovery, o relato de ambiente desta seção estava incompleto: Node `v22.23.2` existe em `$HOME/.nvm/versions/node/v22.23.2` e a suíte global roda com ele. A medição fresca, o comando e a contagem corrigida estão em §9.2. O gate scoped deste PR permanece verde: 0 erro de ESLint/Prettier nos artefatos QA.
 
 ### 8.5 Veredito
 
 **GO para consolidar o Gate 3.** As versões verificadas dos PRs #1–#4 corrigem PCV2-QA-001 a PCV2-QA-006, inclusive a `SecretRef` opaca emitida pelo broker, e todos os gates aplicáveis estão verdes.
 
 Este GO permite somente a consolidação dos artefatos de discovery nas heads acima. **Não é GO operacional nem autorização de deploy/produção**: implementação, feature flag, dry-run e gates finais de QA/Security permanecem etapas posteriores obrigatórias.
+
+## 9. Correções da onda PCv2/W0 — 2026-09-24
+
+Task: `t_1b1f55b3` (Wave 0 da onda de implementação; gate CEO `t_b3ca5a60`). Branch de trabalho: `project-center-v2/qa-discovery`, com a base consolidada `je4n/project-center-v2/base-20260811` (`6e2a36f5`) integrada antes das edições. Escopo estritamente local: nenhum banco, DDL, Docker, R2, Nginx, DNS, Cloudflare, systemd, produção, segredo ou DSN real foi acessado, e nenhum side effect externo foi produzido.
+
+### 9.1 Escopo do scan de path absoluto e secret (P3-02)
+
+Declaração explícita, válida para as seções 7 e 8: o scan de path absoluto, placeholder derivável, URI `secret://`, token integral e padrões de segredo cobre **os 6 artefatos contratuais** — `docs/PRD-project-center-v2.md`, `docs/adr/0001-project-center-v2-control-plane.md`, `specs/contracts/project-center-v2.openapi.yaml`, `specs/features/project-center-v2.spec.md`, `docs/security/project-center-v2-threat-model.md` e `docs/design/project-center-v2-ux.md`. É esse o conjunto lido pelo reteste em qualquer modo.
+
+`docs/qa/project-center-v2-discovery-review.md` (este documento) **não** entra no scan: as citações históricas de path absoluto e de URI `secret://` em §3 e §7.3 são evidência dos achados já corrigidos — não são credencial, segredo, implementação nem instrução operacional. A leitura correta de “0 paths absolutos” é, portanto, escopada aos 6 artefatos contratuais.
+
+### 9.2 Relato de ambiente corrigido (P3-04)
+
+Ambiente medido nesta rodada: Node `v22.23.2` em `$HOME/.nvm/versions/node/v22.23.2` (`/home/jean/.nvm/versions/node/v22.23.2` no worker), `prettier 3.8.1` e `eslint v10.2.0` dos `node_modules` do checkout.
+
+Comando da suíte global, executado a partir do worktree:
+
+```bash
+PATH="$HOME/.nvm/versions/node/v22.23.2/bin:$PATH" \
+  node_modules/.bin/vitest run --reporter=basic
+```
+
+Resultado: **42 failed / 710 passed (752)**, 17 arquivos com falha de 119, 24,07 s, exit code `1`. As falhas são pré-existentes e **fora do escopo** deste PR: os arquivos que falham são de chat, workspace, router, playground, mcp, swarm2 e vt-capital, e **nenhum** toca `project-center` ou `supabase` — o único teste da superfície Supabase, `src/server/supabase-registry.test.ts`, passa 5/5. Este PR não altera código de aplicação: altera o reteste, este parecer e o `.gitignore`.
+
+### 9.3 Reteste parametrizado para o head agregado (P3-01)
+
+`scripts/project-center-v2-discovery-retest.mjs` passou a ter dois modos:
+
+| Modo | Alvo dos artefatos | Seleção |
+| --- | --- | --- |
+| agregado (padrão) | os 6 artefatos no **head do próprio checkout/worktree** | `--ref <ref>` ou `PCV2_RETEST_REF`; default `HEAD` |
+| legado | as quatro branches `je4n/project-center-v2/{prd,spec,security,ux}` | `--branches` |
+
+A base de comparação do secret scan é configurável por `--base <ref>`/`PCV2_RETEST_BASE`; o default continua `je4n/project-center-v2/base-20260811` quando comparável (senão o pai do alvo). O JSON de saída expõe `mode`, `comparison_base` (ref, origem e ranges efetivos), `artifacts` (ref, path e blob por artefato) e mantém `heads`, `checks`, `failures` e `verdict`. Exit codes: `0` GO, `1` NO-GO, `2` uso/ref inválida.
+
+Evidência executada (Node `v22.23.2`):
+
+| Comando | Resultado |
+| --- | --- |
+| `node scripts/project-center-v2-discovery-retest.mjs` (default = `HEAD`) | exit `0`, `verdict: GO`, 13/13 checagens PASS, base default `je4n/project-center-v2/base-20260811`; `heads` registra o sha do alvo no momento da execução (`56042e45…` nesta medição) |
+| mesmo comando repetido | JSON **byte a byte idêntico** (`cmp` limpo) — determinístico para a mesma ref |
+| `node … --ref 6e2a36f5` | exit `0`, `verdict: GO`, `heads {"6e2a36f5":"6e2a36f59d903b28…"}` |
+| `PCV2_RETEST_REF=6e2a36f5 node …` | saída **byte a byte idêntica** à do `--ref` equivalente |
+| `node … --base 8e62b3169afa72032fa828b5b66f6c30da29a383` | exit `0`, `verdict: GO`, range `8e62b316…...HEAD` |
+| `node … --branches` (legado) | exit `0`, `verdict: GO`, `heads` `a743bbda`/`e330a83a`/`5854da43`/`4a291a03` — **idênticos aos registrados em §8.1** |
+| comparação legado × script anterior | `verdict`, `heads`, `failures` e as **12 checagens originais** byte a byte idênticos; acrescenta apenas a checagem aditiva `artifact-references` (6/6 artefatos resolvidos) |
+| `node … --ref je4n/project-center-v2/prd` (ref sem os 6 artefatos) | exit `1`, `verdict: NO-GO`, `failures[]` preenchido, **sem crash** e sem stack trace — degrada para FAIL |
+| `--bogus`, `--ref` sem valor, `--branches` + `--ref`, ref/base inexistente | exit `2` com mensagem de uso em `stderr` |
+
+No modo agregado o range do secret scan é `<base>...<alvo>`; como o alvo já contém a base consolidada, o range efetivo é o delta do alvo sobre a base — o mesmo critério que o modo legado aplicava por branch. O range usado fica registrado em `comparison_base.ranges`, mantendo o gate auditável.
+
+### 9.4 Exceção de `docs/security/` no `.gitignore` (P3-06, Security)
+
+O `.gitignore` mantém `docs/security/` ignorado e passa a negá-lo (`!docs/security/`), porque o plano (PR 7) exige `docs/security/project-center-v2-independent-review.md` em caminho versionado. Evidência: `git check-ignore -v --no-index docs/security/project-center-v2-independent-review.md` apontava `.gitignore:117:docs/security/` antes e não aponta mais nada depois; um arquivo novo naquele diretório passou a aparecer em `git status --short` e o `git add` o aceita **sem** `-f`. As demais regras do arquivo foram reconferidas e seguem valendo (`docs/QA/`, `skills-bundle/`, `SHIP-REPORT.md`, `.env`).
+
+### 9.5 Gates scoped desta rodada
+
+| Gate | Resultado |
+| --- | --- |
+| `prettier 3.8.1 --check docs/qa/project-center-v2-discovery-review.md scripts/project-center-v2-discovery-retest.mjs` | **PASS** |
+| `eslint v10.2.0 scripts/project-center-v2-discovery-retest.mjs` | **PASS** — somente o aviso upstream sobre `.eslintignore` legado |
+| `git diff --check` | **PASS** — 0 erros de whitespace; cobre também o `.gitignore`, que não tem parser Prettier |
+| Reteste default, `--ref`, env, `--base` e `--branches` | **PASS** — §9.3 |
+
+O veredito de §8.5 permanece o mesmo: **GO para consolidar o Gate 3 do discovery; NO-GO operacional.** Estas correções não autorizam deploy, ativação de flag, DDL, Docker/R2 de produção ou qualquer side effect externo.
