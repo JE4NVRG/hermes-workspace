@@ -75,7 +75,7 @@ Rejeitada por custo e complexidade. `postgresql_isolated` é padrão; `supabase_
 
 ## Controles obrigatórios
 
-- roles e scopes canônicos do `x-rbac-policy`, com `default: deny` e dupla pessoa em produção;
+- roles e scopes canônicos do `x-rbac-policy`, com `default: deny`, dupla pessoa em produção e claim `actor_type` obrigatória no token (aprovador `human` em `production_approval` e `destructive_rollback`);
 - `Idempotency-Key` gerada/persistida pelo cliente antes da primeira tentativa, hash de plano, optimistic version e locks com fencing;
 - requests de aprovação discriminados por `decision`: aprovação exige hash/confirmação; rejeição exige motivo e não uma frase falsa de aprovação;
 - allowlists versionadas e imagens/templates pinados;
@@ -129,3 +129,18 @@ O gate de compensação não reutiliza a aprovação de provisionamento. Primeir
 - Tokens carregam roles/scopes do vocabulário canônico; descrições livres não concedem autorização.
 - Labels de UX podem ser traduzidas, mas não criam aliases de estado no domínio.
 - `ApprovalRequest` e `RollbackApprovalRequest` são `oneOf` discriminados, tornando aprovação e rejeição estruturalmente distintas.
+
+## Referências
+
+- Contrato canônico (enum/transições, RBAC e requisitos por operação): `specs/contracts/project-center-v2.openapi.yaml`
+- Especificação técnica: `specs/features/project-center-v2.spec.md`
+- PRD de produto: `docs/PRD-project-center-v2.md`
+- Threat model: `docs/security/project-center-v2-threat-model.md`
+- UX do Project Center v2: `docs/design/project-center-v2-ux.md`
+- Plano de implementação: `docs/plans/project-center-v2-implementation-plan.md`
+- Parecer de gate do QA (pacote de discovery): `docs/qa/project-center-v2-final-gate.md`
+- Parecer de gate do Security (pacote de discovery): `docs/security/project-center-v2-independent-review.md`
+- Revisão de discovery do QA (contexto do reteste): `docs/qa/project-center-v2-discovery-review.md`
+- Gate versionado de reteste: `scripts/project-center-v2-discovery-retest.mjs`
+
+Em divergência, o OpenAPI prevalece para enum de estados, transições, RBAC e requisitos por operação; este ADR prevalece para a decisão de arquitetura. Nenhum documento desta lista autoriza ativação de flag, deploy ou mudança em produção.

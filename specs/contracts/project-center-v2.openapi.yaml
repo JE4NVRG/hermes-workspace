@@ -17,6 +17,11 @@ security:
 x-rbac-policy:
   version: pcv2-rbac-v1
   default: deny
+  actor-claims:
+    subject: sub
+    actor_type: actor_type
+    allowed_values: [human, agent, worker]
+    required: [subject, actor_type]
   roles:
     project_reader:
       scopes: [project:read]
@@ -53,10 +58,14 @@ x-rbac-policy:
       approver_must_be_human: true
       approver_must_differ_from_requester: true
       agent_tokens_may_approve: false
+      actor_type_required: human
+      non_human_actor_response: { status: 403, code: FORBIDDEN }
     destructive_rollback:
       approver_must_differ_from_requester: true
       approver_must_differ_from_original_operation_requester: true
       approval_bound_to: rollback_plan_hash
+      actor_type_required: human
+      non_human_actor_response: { status: 403, code: FORBIDDEN }
 tags:
   - name: Operations
     description: Ciclo idempotente de planejamento, aprovação, execução, verificação e rollback.
@@ -109,11 +118,15 @@ paths:
       tags: [Operations]
       operationId: decideProjectOperationApproval
       x-required-scopes: [project:approve]
-      x-segregation: production_approval
+      x-segregation:
+        policy: production_approval
+        actor_type_required: human
+        non_human_actor_response: { status: 403, code: FORBIDDEN }
       summary: Aprova ou rejeita o hash exato de um plano
       description: >-
         Requer role project_approver e scope project:approve. Em produção o aprovador deve ser humano
-        e diferente do solicitante.
+        e diferente do solicitante. Token com actor_type diferente de human responde 403 FORBIDDEN
+        (erro tipado) sem side effect.
       parameters:
         - $ref: '#/components/parameters/OperationId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -137,6 +150,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '410': { $ref: '#/components/responses/Expired' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /operations/{operation_id}/execute:
     post:
       tags: [Operations]
@@ -171,6 +185,7 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '410': { $ref: '#/components/responses/Expired' }
         '423': { $ref: '#/components/responses/Locked' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /operations/{operation_id}:
     get:
       tags: [Operations]
@@ -217,6 +232,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '423': { $ref: '#/components/responses/Locked' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /operations/{operation_id}/rollback/dry-run:
     post:
       tags: [Operations]
@@ -249,16 +265,22 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/PolicyDenied' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /operations/{operation_id}/rollback/approve:
     post:
       tags: [Operations]
       operationId: decideProjectRollbackApproval
       x-required-scopes: [project:approve]
-      x-segregation: destructive_rollback
+      x-segregation:
+        policy: destructive_rollback
+        actor_type_required: human
+        non_human_actor_response: { status: 403, code: FORBIDDEN }
       summary: Aprova ou rejeita o hash exato do plano de rollback
       description: >-
         A aprovação é independente da aprovação de provisionamento. Em produção e
         para ações destrutivas, o aprovador humano difere dos dois solicitantes.
+        Token com actor_type diferente de human responde 403 FORBIDDEN (erro tipado)
+        sem side effect.
       parameters:
         - $ref: '#/components/parameters/OperationId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -282,6 +304,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '410': { $ref: '#/components/responses/Expired' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /operations/{operation_id}/rollback/execute:
     post:
       tags: [Operations]
@@ -314,6 +337,7 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '410': { $ref: '#/components/responses/Expired' }
         '423': { $ref: '#/components/responses/Locked' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /operations/{operation_id}/audit:
     get:
       tags: [Audit]
@@ -344,6 +368,12 @@ components:
       type: http
       scheme: bearer
       bearerFormat: scoped-token
+      description: >-
+        Token scoped. Exige as claims canônicas `sub` (identidade do ator) e
+        `actor_type`, cujo vocabulário e valores permitidos estão em
+        `x-rbac-policy.actor-claims`. Roles e scopes vêm de `x-rbac-policy`;
+        descrições livres não concedem autorização.
+      x-required-claims: [sub, actor_type]
   parameters:
     OperationId:
       name: operation_id
@@ -581,7 +611,12 @@ components:
           type: string
           minLength: 3
           maxLength: 160
-          description: Frase APROVAR project_id prefixo-do-hash para aprovação.
+          pattern: '^APROVAR [a-z][a-z0-9-]{1,23}-[a-z][a-z0-9-]{1,23} [a-f0-9]{8,64}$'
+          description: >-
+            Frase exata `APROVAR <project_id> <prefixo-do-plan-hash>`: project_id
+            canônico `<client_id>-<project_slug>` e prefixo hexadecimal do
+            `plan_hash` com 8 a 64 caracteres. Qualquer outra forma é
+            INVALID_REQUEST e nunca aprova nada.
         reason: { type: string, minLength: 3, maxLength: 500 }
     RejectRequest:
       type: object
@@ -643,7 +678,12 @@ components:
           type: string
           minLength: 3
           maxLength: 160
-          description: Frase APROVAR ROLLBACK project_id prefixo-do-hash.
+          pattern: '^APROVAR ROLLBACK [a-z][a-z0-9-]{1,23}-[a-z][a-z0-9-]{1,23} [a-f0-9]{8,64}$'
+          description: >-
+            Frase exata `APROVAR ROLLBACK <project_id> <prefixo-do-rollback-plan-hash>`:
+            project_id canônico `<client_id>-<project_slug>` e prefixo hexadecimal
+            do `rollback_plan_hash` com 8 a 64 caracteres. Qualquer outra forma é
+            INVALID_REQUEST e nunca aprova nada.
         reason: { type: string, minLength: 3, maxLength: 500 }
     RollbackRejectRequest:
       type: object
@@ -903,9 +943,14 @@ components:
         ref:
           type: string
           maxLength: 256
+          pattern: '^(?!/)(?!.*://)(?!.*:[^@/]*@)(?!.*\.\.)(?!.*\\)[^\s]+$'
           description: >-
-            Identificador público para artefatos não secretos. Quando type é
-            secret_ref, deve satisfazer SecretRef e ser tratado como valor atômico.
+            Identificador público para artefatos não secretos: nome determinístico
+            do recurso ou prefixo relativo. Não aceita esquema de URI (`://`), `/`
+            inicial (path absoluto), credencial embutida (`usuario:credencial@host`),
+            `..` nem barra invertida; `endpoint_masked` usa a forma `host:porta` do
+            bind local, nunca DSN. Quando type é secret_ref, deve satisfazer
+            SecretRef e ser tratado como valor atômico.
         status:
           {
             type: string,
