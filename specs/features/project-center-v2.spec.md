@@ -35,6 +35,17 @@ O contrato OpenAPI é a fonte canônica da matriz em `x-rbac-policy` e do requis
 
 Todos os ambientes usam a mesma matriz com `default: deny`. Para `environment=production`, o aprovador deve ser humano, possuir role `project_approver`/scope `project:approve` e ser diferente do solicitante. Tokens de agente não podem aprovar, mesmo acumulando outros scopes. No rollback destrutivo, o aprovador também deve ser diferente do solicitante da operação original. Autorização é validada novamente em `execute` e `rollback/execute`; aprovação expirada ou revogada não é reutilizada.
 
+### 2.1 Claims de identidade do ator
+
+O token scoped carrega as claims canônicas declaradas em `x-rbac-policy.actor-claims` do contrato:
+
+| Claim   | Nome no token | Valores permitidos         | Obrigatória |
+| ------- | ------------- | -------------------------- | ----------- |
+| Subject | `sub`         | identificador do ator      | sim         |
+| Tipo    | `actor_type`  | `human`, `agent`, `worker` | sim         |
+
+`actor_type` é a primitiva que torna a segregação de funções verificável a partir do token: `decideProjectOperationApproval` e `decideProjectRollbackApproval` respondem `403 FORBIDDEN` (erro tipado, sem side effect) quando o token tem `actor_type` diferente de `human`, mesmo que acumule o scope `project:approve`. Roles e scopes continuam vindo de `x-rbac-policy`, e `approver_must_be_human: true` com `agent_tokens_may_approve: false` permanecem inalterados. Aprovação por `agent` ou `worker` é sempre negada, nunca convertida em pendência implícita.
+
 ## 3. Modelo de domínio
 
 ### 3.1 ProjectIntent
@@ -74,6 +85,8 @@ Quando `ArtifactRef.type = secret_ref`, `ArtifactRef.ref` é uma `SecretRef` emi
 Antes de devolver a referência, o broker persiste de forma durável e atômica um registro interno que vincula o digest do token ao UUID interno do projeto, purpose, versão, estado e locator protegido do provider. Esses metadados existem somente no domínio privado do broker e nunca são derivados do token nem projetados na API. A operação persiste a `SecretRef` como artefato somente depois de confirmar esse registro; retries recuperam a mesma referência persistida e não emitem aliases determinísticos.
 
 O valor integral pode existir apenas nos campos tipados necessários entre API, worker e broker. Logs, traces, métricas, erros e eventos de auditoria aplicam redaction antes da serialização e registram no máximo um fingerprint não reversível; UI e suporte exibem somente a forma mascarada. A API nunca expõe path absoluto, senha, DSN real, JWT secret, service-role key, conteúdo de `.env` ou os metadados internos do broker.
+
+Para artefatos não secretos, `ArtifactRef.ref` é um identificador público com forma restringida no contrato: não aceita esquema de URI (`://`), `/` inicial (path absoluto), credencial embutida (`usuario:credencial@host`), `..` nem barra invertida. `endpoint_masked` usa a forma `host:porta` do bind local, nunca DSN, senha ou userinfo; os demais tipos usam o nome determinístico do recurso (§4) ou o prefixo relativo, como `projects/<project_id>/<environment>/postgres/`.
 
 ## 4. Naming determinístico
 
@@ -154,6 +167,8 @@ Qualquer outra transição retorna `INVALID_STATE_TRANSITION`. Estados terminais
 O contrato canônico, erros e exemplos estão no OpenAPI. Respostas incluem `request_id`; operações assíncronas incluem `operation_id`, `state` e `status_url`.
 
 `ApprovalRequest` e `RollbackApprovalRequest` usam `oneOf` discriminado por `decision`. O ramo `approve` exige hash e frase de confirmação; o ramo `reject` exige motivo e proíbe a frase de aprovação semanticamente falsa.
+
+A frase de confirmação é imposta estruturalmente pelo contrato canônico: `ApproveRequest.confirmation` casa `^APROVAR <project_id> [a-f0-9]{8,64}$` e `RollbackApproveRequest.confirmation` casa `^APROVAR ROLLBACK <project_id> [a-f0-9]{8,64}$`, com `project_id` no formato canônico `^[a-z][a-z0-9-]{1,23}-[a-z][a-z0-9-]{1,23}$` e prefixo hexadecimal de 8 a 64 caracteres do hash da decisão (`plan_hash` no provisionamento, `rollback_plan_hash` no rollback). Frase fora dessa forma retorna `INVALID_REQUEST` e não aprova nada; a vinculação real da decisão continua sendo o hash exato, a aprovação single-use e a expiração.
 
 ## 7. Planner e ações tipadas
 
@@ -251,6 +266,20 @@ Retries automáticos: máximo 5 attempts por ação, backoff exponencial com jit
 | validade da aprovação           |         15 min |
 | tentativas por ação             |              5 |
 | concorrência por projeto        |              1 |
+
+### 10.1 Rate limit e respostas `429`
+
+As 7 mutações declaram `429` com header `Retry-After` (em segundos) e envelope de erro com `code: RATE_LIMITED` e `retryable: true`; nenhuma mutação pode aplicar limite por ator sem declarar essa resposta.
+
+| Mutação (`operationId`)          | Limite por ator | `429` com `Retry-After` |
+| -------------------------------- | --------------- | ----------------------- |
+| `createProjectDryRun`            | 10/min          | declarado               |
+| `executeProjectOperation`        | 5/min           | declarado               |
+| `verifyProjectOperation`         | 5/min           | declarado               |
+| `createProjectRollbackDryRun`    | 5/min           | declarado               |
+| `decideProjectOperationApproval` | 5/min           | declarado               |
+| `decideProjectRollbackApproval`  | 5/min           | declarado               |
+| `executeProjectRollback`         | 5/min           | declarado               |
 
 Allowlists versionadas cobrem drivers, ambientes, host targets, capabilities, template Supabase, image digests, extensões PostgreSQL, classes de recurso, portas internas e destinos de backup. Valores fora da lista falham em dry-run com `POLICY_DENIED`.
 
