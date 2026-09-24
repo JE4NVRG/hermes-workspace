@@ -105,6 +105,8 @@ A API pública nunca deve executar `psql`, `docker compose`, shell ou operaçõe
 
 O mapeamento role → scope → `operationId` e cada `x-required-scopes` pertencem ao `x-rbac-policy` do OpenAPI e usam `default: deny` em todos os ambientes. Nenhum agente possui `project:approve`, credencial administrativa PostgreSQL, acesso ao Docker socket ou credencial R2 global. Em produção, o aprovador deve ser humano e diferente do solicitante. Em rollback destrutivo, também deve diferir do solicitante da operação original; a autorização é revalidada em `execute` e `rollback/execute`.
 
+A exigência “só humano aprova” é verificável no token pelas claims canônicas de `x-rbac-policy.actor-claims` do contrato — `subject: sub`, `actor_type: actor_type`, `allowed_values: [human, agent, worker]`, `required: [subject, actor_type]` — que `bearerAuth` passa a exigir via `x-required-claims`. As duas decisões (`decideProjectOperationApproval`, `decideProjectRollbackApproval`) declaram em `x-segregation` as políticas `production_approval`/`destructive_rollback` com `actor_type_required: human` e `non_human_actor_response { status: 403, code: FORBIDDEN }`: token com `actor_type` diferente de `human` é negado com erro tipado e zero side effect, mesmo acumulando o scope `project:approve`. Acumular scopes nunca converte aprovação de agente em pendência implícita (spec §2.1).
+
 ### 4.2 Role PostgreSQL da aplicação
 
 A role `je4ndev_<cliente>_<projeto>_app` deve ser criada com:
@@ -202,7 +204,7 @@ Eventos registram `actor_ref`, `project_uuid`, ação, `plan_hash` ou `rollback_
 | Cross-project | Supabase | JWT/service key, rede, volume ou Storage compartilhado cruza A/B | **Crítica** | material criptográfico, rede, data path e domínio exclusivos; inventário e probes A × B |
 | Race/TOCTOU | Secret/path | symlink troca destino entre validação e escrita | **Alta** | open atômico sem seguir link, owner/mode, rename atômico e raiz não gravável por terceiros |
 | Race/idempotência | API/fila | duas execuções criam role/database/stack duplicado ou uma apaga recurso da outra | **Alta** | constraint + fingerprint + advisory/distributed lock + resource ownership tags |
-| Rollback parcial | Workflow | DB criado e secret falha; retry colide ou compensação remove recurso antigo | **Alta** | journal durável, compensação baseada em ownership desta operation ID, estado `needs_reconcile`, sem delete cego |
+| Rollback parcial | Workflow | DB criado e secret falha; retry colide ou compensação remove recurso antigo | **Alta** | journal durável, compensação baseada em ownership desta operation ID; conflito sem prova segura de ownership vai para `manual_intervention_required`, retry de `failed` volta a `queued` ou segue para `rollback_pending`; nunca delete cego |
 | Tampering | Backup/R2 | path/prefixo cruzado sobrescreve backup B ou restore A em B | **Crítica** | prefixo derivado, IAM scoped, manifest project-bound, checksum/assinatura e restore negativo A × B |
 
 ## 7. Vulnerabilidades concretas da implementação atual
@@ -405,6 +407,9 @@ Injetar canary secrets conhecidos em fixtures isoladas e provar ausência em res
 | API-17 | duas emissões independentes ou rotação para o mesmo projeto/purpose; retry idempotente da mesma operação | emissões/rotação produzem tokens aleatórios distintos; retry recupera a referência já persistida sem alias determinístico |
 | API-18 | referência válida de A é apresentada por ator/projeto B, revogada, expirada ou sem scope | 403/404 uniforme; nenhum secret, binding, locator, fingerprint correlacionável ou metadata de A |
 | API-19 | falha antes/durante a persistência do digest e binding privado | nenhum `ArtifactRef` publicado; estado reconciliável e zero token órfão observável |
+| API-20 | token de agente (`actor_type: agent`) com scope `project:approve` chama `decideProjectOperationApproval` ou `decideProjectRollbackApproval` em operação de produção | `403 FORBIDDEN` tipado conforme `x-segregation` (`policy: production_approval`/`destructive_rollback`, `actor_type_required: human`); decisão não registrada, estado inalterado e zero side effect. Mesma resposta para `actor_type: worker`, mesmo acumulando outros scopes |
+
+Os casos de decisão (API-13, API-14 e API-20) pressupõem as claims canônicas de ator exigidas por `bearerAuth` no contrato — `x-rbac-policy.actor-claims`: `subject: sub`, `actor_type: actor_type`, `allowed_values: [human, agent, worker]`, `required: [subject, actor_type]`. A segregação “só humano aprova” é assim verificável no próprio token, e não por convenção de papel: `x-segregation` fixa `actor_type_required: human` e `non_human_actor_response { status: 403, code: FORBIDDEN }` nas duas operações de decisão.
 
 ### 12.2 PostgreSQL A × B
 
@@ -450,11 +455,17 @@ Capturar comandos, exit status e assertions sem credenciais. O gate não aceita 
 - rotação prova nova credencial válida e anterior revogada sem downtime indevido;
 - scanner de Git/diff/log/artifacts não encontra canary secrets.
 
+### 12.5 Escopo declarado da varredura de secrets e de paths
+
+A varredura dirigida de secrets, credenciais e paths absolutos cobre os **6 artefatos contratuais** — PRD, ADR, OpenAPI, spec, este threat model e UX —, que é o conjunto percorrido pelo reteste do pacote. Os documentos de revisão histórica (`docs/qa/project-center-v2-discovery-review.md`, `docs/qa/project-center-v2-final-gate.md` e `docs/security/project-center-v2-independent-review.md`) ficam **fora** desse escopo: eles citam como evidência achados já removidos do contrato, incluindo caminhos absolutos de host e URIs de esquema derivável do modelo antigo de referência de secret. Essas citações são registro de auditoria datado, não credencial, segredo nem implementação, e nenhum valor real é reproduzido nelas.
+
+Conclusões do tipo “zero ocorrências de paths absolutos ou de referências deriváveis” devem ser lidas como escopadas a esses 6 artefatos contratuais — nunca como afirmação absoluta sobre o repositório inteiro. O gate de implementação reaplica a varredura ao código e aos artefatos de runtime, onde o escopo passa a ser todo o diff do PR correspondente.
+
 ## 13. NO-GO gates
 
 Qualquer item aberto mantém o sistema em **NO-GO**:
 
-- [ ] Endpoint de execução fail-closed com RBAC/ABAC por projeto e segregação plan/approve/execute.
+- [ ] Endpoint de execução fail-closed com RBAC/ABAC por projeto e segregação plan/approve/execute verificável por `actor_type` (só `human` aprova; `403 FORBIDDEN` tipado declarado em `x-segregation`).
 - [ ] Processo web sem Docker socket, credencial `postgres`, credencial R2 global ou leitura de secrets reais.
 - [ ] Provisionador dedicado, sandboxed e limitado a templates/ações allowlisted.
 - [ ] Dry-run comprovadamente sem side effects e approval vinculada ao `plan_hash`.
