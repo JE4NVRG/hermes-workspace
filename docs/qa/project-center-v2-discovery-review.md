@@ -20,27 +20,27 @@ O pacote está adequado como material de discovery, mas **não deve ser consolid
 
 ### 2.1 PRs e commits
 
-| PR | Artefato | HEAD verificado | Estado observado |
-| --- | --- | --- | --- |
-| [#1](https://github.com/JE4NVRG/hermes-workspace/pull/1) | PRD | `6fcb7f6f70e301e93aa92325f92e35d3ec3c4419` | open, mergeable |
-| [#2](https://github.com/JE4NVRG/hermes-workspace/pull/2) | ADR, OpenAPI e spec | `010e2d57798acca38100689ee7f77fe7ae1b5a55` | open, mergeable |
-| [#3](https://github.com/JE4NVRG/hermes-workspace/pull/3) | Threat model | `ae15b5cecd110a7e9937dcc465ca5b257ecd9a72` | open, mergeable |
-| [#4](https://github.com/JE4NVRG/hermes-workspace/pull/4) | UX | `6093d9718985f88a8569f04689495dc6efea8e0b` | open, mergeable |
+| PR                                                       | Artefato            | HEAD verificado                            | Estado observado |
+| -------------------------------------------------------- | ------------------- | ------------------------------------------ | ---------------- |
+| [#1](https://github.com/JE4NVRG/hermes-workspace/pull/1) | PRD                 | `6fcb7f6f70e301e93aa92325f92e35d3ec3c4419` | open, mergeable  |
+| [#2](https://github.com/JE4NVRG/hermes-workspace/pull/2) | ADR, OpenAPI e spec | `010e2d57798acca38100689ee7f77fe7ae1b5a55` | open, mergeable  |
+| [#3](https://github.com/JE4NVRG/hermes-workspace/pull/3) | Threat model        | `ae15b5cecd110a7e9937dcc465ca5b257ecd9a72` | open, mergeable  |
+| [#4](https://github.com/JE4NVRG/hermes-workspace/pull/4) | UX                  | `6093d9718985f88a8569f04689495dc6efea8e0b` | open, mergeable  |
 
 Os quatro HEADs foram buscados de `refs/pull/<n>/head` e comparados com a base declarada. Cada PR altera somente os arquivos informados no handoff.
 
 ### 2.2 Validações automatizadas
 
-| Validação | Resultado |
-| --- | --- |
-| Parse OpenAPI 3.1 com pacote `yaml` do projeto | PASS |
-| Referências locais `$ref` | PASS — 100 referências, 0 não resolvidas |
-| `operationId` duplicado | PASS — 0 |
-| Parâmetros de path ausentes | PASS — 0 |
-| Formatação dos 6 artefatos com `prettier@3.8.1 --check` | PASS |
-| Scan de padrões de private key, PAT e atribuição de token/secret nos diffs | PASS — 0 hits |
-| Paths canônicos locais do platform core | PASS — 4/4 existem |
-| Links públicos do `je4ndev-platform-core` | BLOQUEADO — GitHub devolve 404 sem credencial para o repositório privado |
+| Validação                                                                  | Resultado                                                                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Parse OpenAPI 3.1 com pacote `yaml` do projeto                             | PASS                                                                     |
+| Referências locais `$ref`                                                  | PASS — 100 referências, 0 não resolvidas                                 |
+| `operationId` duplicado                                                    | PASS — 0                                                                 |
+| Parâmetros de path ausentes                                                | PASS — 0                                                                 |
+| Formatação dos 6 artefatos com `prettier@3.8.1 --check`                    | PASS                                                                     |
+| Scan de padrões de private key, PAT e atribuição de token/secret nos diffs | PASS — 0 hits                                                            |
+| Paths canônicos locais do platform core                                    | PASS — 4/4 existem                                                       |
+| Links públicos do `je4ndev-platform-core`                                  | BLOQUEADO — GitHub devolve 404 sem credencial para o repositório privado |
 
 A API pública do GitHub confirmou estado, HEAD, base e mergeabilidade dos PRs do `hermes-workspace`. A autenticação API configurada no ambiente está inválida; a autenticação SSH `JE4NVRG` está funcional. Isso não impediu a revisão dos blobs, mas impede publicar comentários via API até renovar o token.
 
@@ -175,16 +175,16 @@ Usar `oneOf` discriminado por `decision`: `approve` exige confirmação/hash; `r
 
 ## 5. Matriz GO/NO-GO
 
-| Gate | Resultado | Motivo |
-| --- | --- | --- |
-| PRD / risco central | PASS condicionado | Modos, legado, gates e risco compartilhado estão claros |
-| OpenAPI estrutural | PASS | Parse, refs, operation IDs e path params verdes |
-| Consistência entre artefatos | **FAIL** | Estados, RBAC, idempotência e secret refs divergem |
-| Rollback seguro | **FAIL** | Contrato não modela novo plano/aprovação destrutiva |
-| Links e paths | PASS local / BLOCKED remoto privado | Paths existem; API GitHub sem credencial válida |
-| Secret scan dos diffs | PASS | 0 hits nos padrões executados |
-| GO operacional | **NO-GO explícito** | Implementação atual continua schema compartilhado e executor privilegiado web |
-| GO para consolidação Gate 3 | **NO-GO** | PCV2-QA-001 a 006 devem ser corrigidos |
+| Gate                         | Resultado                           | Motivo                                                                        |
+| ---------------------------- | ----------------------------------- | ----------------------------------------------------------------------------- |
+| PRD / risco central          | PASS condicionado                   | Modos, legado, gates e risco compartilhado estão claros                       |
+| OpenAPI estrutural           | PASS                                | Parse, refs, operation IDs e path params verdes                               |
+| Consistência entre artefatos | **FAIL**                            | Estados, RBAC, idempotência e secret refs divergem                            |
+| Rollback seguro              | **FAIL**                            | Contrato não modela novo plano/aprovação destrutiva                           |
+| Links e paths                | PASS local / BLOCKED remoto privado | Paths existem; API GitHub sem credencial válida                               |
+| Secret scan dos diffs        | PASS                                | 0 hits nos padrões executados                                                 |
+| GO operacional               | **NO-GO explícito**                 | Implementação atual continua schema compartilhado e executor privilegiado web |
+| GO para consolidação Gate 3  | **NO-GO**                           | PCV2-QA-001 a 006 devem ser corrigidos                                        |
 
 ## 6. Reteste obrigatório
 
@@ -208,12 +208,12 @@ O reteste deve comprovar:
 
 Este reteste buscou as heads atualizadas das quatro branches, sem GitHub API, e validou os refs remotos por SSH:
 
-| PR | Branch | HEAD remoto no reteste |
-| --- | --- | --- |
-| #1 | `project-center-v2/prd` | `a743bbdaf60ad068a6dc2be8e328a067ee071b58` |
-| #2 | `project-center-v2/spec` | `0bbe2492455754c2d0fe8073d7f51fce03ba537c` |
-| #3 | `project-center-v2/security` | `d19a49ca719b32d190fb6d11ab7723f6a16fc0e2` |
-| #4 | `project-center-v2/ux` | `eb5fac3529392479a132a31f9043691d70b5ccbe` |
+| PR  | Branch                       | HEAD remoto no reteste                     |
+| --- | ---------------------------- | ------------------------------------------ |
+| #1  | `project-center-v2/prd`      | `a743bbdaf60ad068a6dc2be8e328a067ee071b58` |
+| #2  | `project-center-v2/spec`     | `0bbe2492455754c2d0fe8073d7f51fce03ba537c` |
+| #3  | `project-center-v2/security` | `d19a49ca719b32d190fb6d11ab7723f6a16fc0e2` |
+| #4  | `project-center-v2/ux`       | `eb5fac3529392479a132a31f9043691d70b5ccbe` |
 
 Comandos reproduzíveis:
 
@@ -235,23 +235,23 @@ O script versionado lê os seis artefatos diretamente dos refs Git, parseia o Op
 
 ### 7.2 Gates automatizados reexecutados
 
-| Gate | Resultado | Evidência do reteste |
-| --- | --- | --- |
-| Parse OpenAPI 3.1 e `$ref` locais | PASS | 134 refs; 0 não resolvidas |
-| `operationId` e parâmetros de path | PASS | 9 IDs únicos; 0 duplicados; 0 parâmetros ausentes |
-| Estados e transições | PASS | 15 estados; 23 transições válidas; 0 destinos fora do enum |
-| Projeções de estado nos documentos | PASS | PRD, spec, threat model e UX referenciam `OperationState`/tabela canônica; 0 lacunas |
-| RBAC contratual | PASS | `default: deny`; 5 roles; cada uma das 9 operações pertence a uma role e seus `x-required-scopes` estão cobertos |
-| Idempotência | PASS | 7/7 mutações exigem `Idempotency-Key`; contrato declara geração/persistência client-owned antes do primeiro POST |
-| Rollback | PASS | endpoints `dry-run`, `approve` e `execute`; `rollback_plan_hash`, `approval_id` e segregação destrutiva presentes |
-| Approve/reject | PASS | provisionamento e rollback usam `oneOf` discriminado; approve exige hash/confirmação e reject exige motivo sem confirmação |
-| Identidade e referência de secret | **FAIL** | 0 paths absolutos, mas três artefatos ainda usam duas identidades incompatíveis na `secret_ref` |
-| Secret scan dos diffs | PASS | 4 branches; 4 classes de padrão; 0 hits |
-| Redocly CLI 1.34.5 | PASS | `Woohoo! Your API description is valid.` |
-| Prettier 3.8.1 | PASS | os dois artefatos do reteste usam o estilo configurado |
-| ESLint | PASS | script sem erros; somente aviso upstream sobre `.eslintignore` legado |
-| `git diff --check` | PASS | 0 erros de whitespace no patch do reteste |
-| Referências dos artefatos | PASS | `git cat-file -e` resolveu 6/6 arquivos nas heads revisadas |
+| Gate                               | Resultado | Evidência do reteste                                                                                                       |
+| ---------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Parse OpenAPI 3.1 e `$ref` locais  | PASS      | 134 refs; 0 não resolvidas                                                                                                 |
+| `operationId` e parâmetros de path | PASS      | 9 IDs únicos; 0 duplicados; 0 parâmetros ausentes                                                                          |
+| Estados e transições               | PASS      | 15 estados; 23 transições válidas; 0 destinos fora do enum                                                                 |
+| Projeções de estado nos documentos | PASS      | PRD, spec, threat model e UX referenciam `OperationState`/tabela canônica; 0 lacunas                                       |
+| RBAC contratual                    | PASS      | `default: deny`; 5 roles; cada uma das 9 operações pertence a uma role e seus `x-required-scopes` estão cobertos           |
+| Idempotência                       | PASS      | 7/7 mutações exigem `Idempotency-Key`; contrato declara geração/persistência client-owned antes do primeiro POST           |
+| Rollback                           | PASS      | endpoints `dry-run`, `approve` e `execute`; `rollback_plan_hash`, `approval_id` e segregação destrutiva presentes          |
+| Approve/reject                     | PASS      | provisionamento e rollback usam `oneOf` discriminado; approve exige hash/confirmação e reject exige motivo sem confirmação |
+| Identidade e referência de secret  | **FAIL**  | 0 paths absolutos, mas três artefatos ainda usam duas identidades incompatíveis na `secret_ref`                            |
+| Secret scan dos diffs              | PASS      | 4 branches; 4 classes de padrão; 0 hits                                                                                    |
+| Redocly CLI 1.34.5                 | PASS      | `Woohoo! Your API description is valid.`                                                                                   |
+| Prettier 3.8.1                     | PASS      | os dois artefatos do reteste usam o estilo configurado                                                                     |
+| ESLint                             | PASS      | script sem erros; somente aviso upstream sobre `.eslintignore` legado                                                      |
+| `git diff --check`                 | PASS      | 0 erros de whitespace no patch do reteste                                                                                  |
+| Referências dos artefatos          | PASS      | `git cat-file -e` resolveu 6/6 arquivos nas heads revisadas                                                                |
 
 O reteste foi estritamente documental/contratual. Nenhum banco, role, secret, Docker, Nginx, DNS, Cloudflare, systemd ou ambiente de produção foi acessado ou alterado.
 
@@ -291,12 +291,12 @@ As sete mutações referenciam o header obrigatório. Sua descrição determina 
 
 ### 7.4 Matriz final do reteste
 
-| Decisão | Resultado | Motivo |
-| --- | --- | --- |
-| Correções PCV2-QA-001/002/004/005/006 | **PASS** | contratos e projeções agora são consistentes e validados automaticamente |
-| Correção PCV2-QA-003 | **FAIL P1** | `secret_ref` alterna `<project_id>` e `<project-uuid>` e o OpenAPI não torna a identidade opaca inequívoca |
-| GO operacional | **NO-GO mantido** | discovery não implementa nem autoriza side effects reais |
-| GO para consolidação do Gate 3 | **NO-GO** | não consolidar PRs #1–#4 enquanto PCV2-QA-003 permanecer divergente |
+| Decisão                               | Resultado         | Motivo                                                                                                     |
+| ------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| Correções PCV2-QA-001/002/004/005/006 | **PASS**          | contratos e projeções agora são consistentes e validados automaticamente                                   |
+| Correção PCV2-QA-003                  | **FAIL P1**       | `secret_ref` alterna `<project_id>` e `<project-uuid>` e o OpenAPI não torna a identidade opaca inequívoca |
+| GO operacional                        | **NO-GO mantido** | discovery não implementa nem autoriza side effects reais                                                   |
+| GO para consolidação do Gate 3        | **NO-GO**         | não consolidar PRs #1–#4 enquanto PCV2-QA-003 permanecer divergente                                        |
 
 **Decisão final do reteste: NO-GO. Cinco de seis achados foram corrigidos; PCV2-QA-003 permanece bloqueante para consolidação.**
 
@@ -308,12 +308,12 @@ Task de reteste: `t_1906b882`. Issue de acompanhamento: `JE4NVRG/je4ndev-platfor
 
 O segundo reteste buscou as heads corrigidas diretamente por Git SSH, sem GitHub API, browser ou credencial HTTP. Os refs locais e remotos foram comparados antes dos testes:
 
-| PR | Branch | HEAD remoto verificado por SSH |
-| --- | --- | --- |
-| #1 | `project-center-v2/prd` | `a743bbdaf60ad068a6dc2be8e328a067ee071b58` |
-| #2 | `project-center-v2/spec` | `e330a83a5570a7c917d1f4c38cdddb7fdb0411a0` |
-| #3 | `project-center-v2/security` | `5854da43eabc8b0de46cfb58d6ec183812406856` |
-| #4 | `project-center-v2/ux` | `4a291a039e6191bda53f9beec89fcc02af865713` |
+| PR  | Branch                       | HEAD remoto verificado por SSH             |
+| --- | ---------------------------- | ------------------------------------------ |
+| #1  | `project-center-v2/prd`      | `a743bbdaf60ad068a6dc2be8e328a067ee071b58` |
+| #2  | `project-center-v2/spec`     | `e330a83a5570a7c917d1f4c38cdddb7fdb0411a0` |
+| #3  | `project-center-v2/security` | `5854da43eabc8b0de46cfb58d6ec183812406856` |
+| #4  | `project-center-v2/ux`       | `4a291a039e6191bda53f9beec89fcc02af865713` |
 
 Comandos principais reproduzíveis:
 
@@ -353,31 +353,31 @@ O exemplo `sref_REDACTED_REDACTED_REDACTED_REDACTED_REDACTED` é uma máscara ne
 
 ### 8.3 Regressão completa dos seis achados
 
-| Achado | Resultado | Evidência automatizada |
-| --- | --- | --- |
-| PCV2-QA-001 | **PASS** | 15 estados, 23 transições válidas e 0 lacunas nas projeções PRD/spec/threat/UX |
-| PCV2-QA-002 | **PASS** | rollback `dry-run/approve/execute`, hash, `approval_id` e segregação destrutiva |
-| PCV2-QA-003 | **PASS** | schema condicional, broker-issued CSPRNG, binding atômico e 0 placeholders/tokens/paths expostos |
-| PCV2-QA-004 | **PASS** | `default: deny`, 5 roles, 9 operações e 0 inconsistências de scopes/ownership |
-| PCV2-QA-005 | **PASS** | 7/7 mutações exigem `Idempotency-Key` client-owned antes do primeiro POST |
-| PCV2-QA-006 | **PASS** | provisionamento e rollback usam `oneOf` discriminado para approve/reject |
+| Achado      | Resultado | Evidência automatizada                                                                           |
+| ----------- | --------- | ------------------------------------------------------------------------------------------------ |
+| PCV2-QA-001 | **PASS**  | 15 estados, 23 transições válidas e 0 lacunas nas projeções PRD/spec/threat/UX                   |
+| PCV2-QA-002 | **PASS**  | rollback `dry-run/approve/execute`, hash, `approval_id` e segregação destrutiva                  |
+| PCV2-QA-003 | **PASS**  | schema condicional, broker-issued CSPRNG, binding atômico e 0 placeholders/tokens/paths expostos |
+| PCV2-QA-004 | **PASS**  | `default: deny`, 5 roles, 9 operações e 0 inconsistências de scopes/ownership                    |
+| PCV2-QA-005 | **PASS**  | 7/7 mutações exigem `Idempotency-Key` client-owned antes do primeiro POST                        |
+| PCV2-QA-006 | **PASS**  | provisionamento e rollback usam `oneOf` discriminado para approve/reject                         |
 
 ### 8.4 Gates técnicos reexecutados
 
-| Gate | Resultado |
-| --- | --- |
-| OpenAPI 3.1 parse e `$ref` locais | **PASS** — 135 refs, 0 não resolvidas |
-| `operationId` e parâmetros de path | **PASS** — 9 IDs únicos, 0 ausências |
-| Referências dos seis artefatos nos refs Git | **PASS** — 6/6 resolvidas por `git cat-file -e` |
-| Redocly CLI 1.34.5 | **PASS** — API description valid |
-| Estados e projeções | **PASS** — 15 estados, 23 transições, 0 inconsistências/lacunas |
-| RBAC | **PASS** — default deny, 5 roles, 9 operações cobertas |
-| Idempotência | **PASS** — 7 mutações cobertas |
-| Rollback e approve/reject | **PASS** — contratos segregados e discriminados |
-| SecretRef schema/projeções | **PASS** — contrato opaco em PRD/ADR/OpenAPI/spec/threat/UX |
-| Placeholder/path/token scan | **PASS** — 0/0/0 |
-| Secret scan dos diffs das quatro branches | **PASS** — 0 hits |
-| Prettier e ESLint dos dois artefatos QA; `git diff --check` | **PASS** |
+| Gate                                                        | Resultado                                                       |
+| ----------------------------------------------------------- | --------------------------------------------------------------- |
+| OpenAPI 3.1 parse e `$ref` locais                           | **PASS** — 135 refs, 0 não resolvidas                           |
+| `operationId` e parâmetros de path                          | **PASS** — 9 IDs únicos, 0 ausências                            |
+| Referências dos seis artefatos nos refs Git                 | **PASS** — 6/6 resolvidas por `git cat-file -e`                 |
+| Redocly CLI 1.34.5                                          | **PASS** — API description valid                                |
+| Estados e projeções                                         | **PASS** — 15 estados, 23 transições, 0 inconsistências/lacunas |
+| RBAC                                                        | **PASS** — default deny, 5 roles, 9 operações cobertas          |
+| Idempotência                                                | **PASS** — 7 mutações cobertas                                  |
+| Rollback e approve/reject                                   | **PASS** — contratos segregados e discriminados                 |
+| SecretRef schema/projeções                                  | **PASS** — contrato opaco em PRD/ADR/OpenAPI/spec/threat/UX     |
+| Placeholder/path/token scan                                 | **PASS** — 0/0/0                                                |
+| Secret scan dos diffs das quatro branches                   | **PASS** — 0 hits                                               |
+| Prettier e ESLint dos dois artefatos QA; `git diff --check` | **PASS**                                                        |
 
 O reteste permaneceu estritamente documental e contratual. Nenhum banco, role, secret real, Docker, Nginx, DNS, Cloudflare, systemd ou ambiente de produção foi acessado ou alterado.
 
@@ -416,26 +416,26 @@ Resultado: **42 failed / 710 passed (752)**, 17 arquivos com falha de 119, 24,07
 
 `scripts/project-center-v2-discovery-retest.mjs` passou a ter dois modos:
 
-| Modo | Alvo dos artefatos | Seleção |
-| --- | --- | --- |
-| agregado (padrão) | os 6 artefatos no **head do próprio checkout/worktree** | `--ref <ref>` ou `PCV2_RETEST_REF`; default `HEAD` |
-| legado | as quatro branches `je4n/project-center-v2/{prd,spec,security,ux}` | `--branches` |
+| Modo              | Alvo dos artefatos                                                 | Seleção                                            |
+| ----------------- | ------------------------------------------------------------------ | -------------------------------------------------- |
+| agregado (padrão) | os 6 artefatos no **head do próprio checkout/worktree**            | `--ref <ref>` ou `PCV2_RETEST_REF`; default `HEAD` |
+| legado            | as quatro branches `je4n/project-center-v2/{prd,spec,security,ux}` | `--branches`                                       |
 
 A base de comparação do secret scan é configurável por `--base <ref>`/`PCV2_RETEST_BASE`; o default continua `je4n/project-center-v2/base-20260811` quando comparável (senão o pai do alvo). O JSON de saída expõe `mode`, `comparison_base` (ref, origem e ranges efetivos), `artifacts` (ref, path e blob por artefato) e mantém `heads`, `checks`, `failures` e `verdict`. Exit codes: `0` GO, `1` NO-GO, `2` uso/ref inválida.
 
 Evidência executada (Node `v22.23.2`):
 
-| Comando | Resultado |
-| --- | --- |
-| `node scripts/project-center-v2-discovery-retest.mjs` (default = `HEAD`) | exit `0`, `verdict: GO`, 13/13 checagens PASS, base default `je4n/project-center-v2/base-20260811`; `heads` registra o sha do alvo no momento da execução (`56042e45…` nesta medição) |
-| mesmo comando repetido | JSON **byte a byte idêntico** (`cmp` limpo) — determinístico para a mesma ref |
-| `node … --ref 6e2a36f5` | exit `0`, `verdict: GO`, `heads {"6e2a36f5":"6e2a36f59d903b28…"}` |
-| `PCV2_RETEST_REF=6e2a36f5 node …` | saída **byte a byte idêntica** à do `--ref` equivalente |
-| `node … --base 8e62b3169afa72032fa828b5b66f6c30da29a383` | exit `0`, `verdict: GO`, range `8e62b316…...HEAD` |
-| `node … --branches` (legado) | exit `0`, `verdict: GO`, `heads` `a743bbda`/`e330a83a`/`5854da43`/`4a291a03` — **idênticos aos registrados em §8.1** |
-| comparação legado × script anterior | `verdict`, `heads`, `failures` e as **12 checagens originais** byte a byte idênticos; acrescenta apenas a checagem aditiva `artifact-references` (6/6 artefatos resolvidos) |
-| `node … --ref je4n/project-center-v2/prd` (ref sem os 6 artefatos) | exit `1`, `verdict: NO-GO`, `failures[]` preenchido, **sem crash** e sem stack trace — degrada para FAIL |
-| `--bogus`, `--ref` sem valor, `--branches` + `--ref`, ref/base inexistente | exit `2` com mensagem de uso em `stderr` |
+| Comando                                                                    | Resultado                                                                                                                                                                             |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node scripts/project-center-v2-discovery-retest.mjs` (default = `HEAD`)   | exit `0`, `verdict: GO`, 13/13 checagens PASS, base default `je4n/project-center-v2/base-20260811`; `heads` registra o sha do alvo no momento da execução (`56042e45…` nesta medição) |
+| mesmo comando repetido                                                     | JSON **byte a byte idêntico** (`cmp` limpo) — determinístico para a mesma ref                                                                                                         |
+| `node … --ref 6e2a36f5`                                                    | exit `0`, `verdict: GO`, `heads {"6e2a36f5":"6e2a36f59d903b28…"}`                                                                                                                     |
+| `PCV2_RETEST_REF=6e2a36f5 node …`                                          | saída **byte a byte idêntica** à do `--ref` equivalente                                                                                                                               |
+| `node … --base 8e62b3169afa72032fa828b5b66f6c30da29a383`                   | exit `0`, `verdict: GO`, range `8e62b316…...HEAD`                                                                                                                                     |
+| `node … --branches` (legado)                                               | exit `0`, `verdict: GO`, `heads` `a743bbda`/`e330a83a`/`5854da43`/`4a291a03` — **idênticos aos registrados em §8.1**                                                                  |
+| comparação legado × script anterior                                        | `verdict`, `heads`, `failures` e as **12 checagens originais** byte a byte idênticos; acrescenta apenas a checagem aditiva `artifact-references` (6/6 artefatos resolvidos)           |
+| `node … --ref je4n/project-center-v2/prd` (ref sem os 6 artefatos)         | exit `1`, `verdict: NO-GO`, `failures[]` preenchido, **sem crash** e sem stack trace — degrada para FAIL                                                                              |
+| `--bogus`, `--ref` sem valor, `--branches` + `--ref`, ref/base inexistente | exit `2` com mensagem de uso em `stderr`                                                                                                                                              |
 
 No modo agregado o range do secret scan é `<base>...<alvo>`; como o alvo já contém a base consolidada, o range efetivo é o delta do alvo sobre a base — o mesmo critério que o modo legado aplicava por branch. O range usado fica registrado em `comparison_base.ranges`, mantendo o gate auditável.
 
@@ -445,11 +445,11 @@ O `.gitignore` mantém `docs/security/` ignorado e passa a negá-lo (`!docs/secu
 
 ### 9.5 Gates scoped desta rodada
 
-| Gate | Resultado |
-| --- | --- |
-| `prettier 3.8.1 --check docs/qa/project-center-v2-discovery-review.md scripts/project-center-v2-discovery-retest.mjs` | **PASS** |
-| `eslint v10.2.0 scripts/project-center-v2-discovery-retest.mjs` | **PASS** — somente o aviso upstream sobre `.eslintignore` legado |
-| `git diff --check` | **PASS** — 0 erros de whitespace; cobre também o `.gitignore`, que não tem parser Prettier |
-| Reteste default, `--ref`, env, `--base` e `--branches` | **PASS** — §9.3 |
+| Gate                                                                                                                  | Resultado                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `prettier 3.8.1 --check docs/qa/project-center-v2-discovery-review.md scripts/project-center-v2-discovery-retest.mjs` | **PASS**                                                                                   |
+| `eslint v10.2.0 scripts/project-center-v2-discovery-retest.mjs`                                                       | **PASS** — somente o aviso upstream sobre `.eslintignore` legado                           |
+| `git diff --check`                                                                                                    | **PASS** — 0 erros de whitespace; cobre também o `.gitignore`, que não tem parser Prettier |
+| Reteste default, `--ref`, env, `--base` e `--branches`                                                                | **PASS** — §9.3                                                                            |
 
 O veredito de §8.5 permanece o mesmo: **GO para consolidar o Gate 3 do discovery; NO-GO operacional.** Estas correções não autorizam deploy, ativação de flag, DDL, Docker/R2 de produção ou qualquer side effect externo.
