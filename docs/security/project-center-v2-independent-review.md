@@ -38,23 +38,23 @@ Esta revisão não reutiliza os números do QA: cada verificação foi refeita c
 
 ### 3.1 Verificação própria do contrato canônico
 
-| # | Verificação | Resultado |
-| --- | --- | --- |
-| 1 | Parse YAML/OpenAPI 3.1 do contrato | **PASS** — `openapi: 3.1.0`, `version: 2.0.0-draft` |
-| 2 | Máquina de estados vs. enum canônico | **PASS** — 15 estados, 23 arestas, 0 alvos inválidos, 0 fontes ausentes, 0 terminais com saída, 0 não-terminais sem saída |
-| 3 | Aliases de estado nas projeções | **GAP** — 4 ocorrências de candidatos: 3 em contexto explícito de proibição (`ux:272` `pending`/`running`, `ux:378` `needs_recovery`) e **1 residual em `threat-model:205` (`needs_reconcile`)** → P2-02 |
-| 4 | RBAC: `default: deny`, partição role→operação→scope | **PASS** — `default=deny`, 5 roles, 9 `operationId`, 0 órfãs, 0 multi-role, 0 sem `x-required-scopes` |
-| 5 | Verificabilidade da segregação de funções a partir do token | **GAP** — `x-rbac-policy.segregation` declara `approver_must_be_human: true` e `agent_tokens_may_approve: false`, mas `bearerAuth` (`bearerFormat: scoped-token`) e a política não definem claim de tipo de ator (`actor_type`/`principal_type`/`token_kind` ausentes) → P2-01 |
-| 6 | `Idempotency-Key` obrigatória nas mutações | **PASS** — 7 mutações `POST`, 0 sem header |
-| 7 | Rate limit declarado por mutação | **GAP** — apenas `createProjectDryRun` declara `429`; as outras 6 mutações não → P3-01 |
-| 8 | Entrada hostil: nenhum campo de comando/SQL/path/env/imagem | **PASS** — 12 schemas de request, 0 campos proibidos (`command`, `sql`, `script`, `argv`, `shell`, `exec`, `path`, `mount`, `image`, `env`, `password`, `dsn`, `token`) e todos fechados (`additionalProperties: false` ou `oneOf`) |
-| 9 | Confirmação de aprovação estruturalmente vinculada à frase exigida | **GAP** — `ApproveRequest.confirmation` e `RollbackApproveRequest.confirmation` são strings livres `minLength: 3`, sem `pattern` → P3-02 |
-| 10 | `SecretRef` opaca + máscara neutra | **PASS** — `^sref_[A-Za-z0-9_-]{43,128}$`, exemplo com 49 caracteres (44 úteis ≥ 43 exigidos / ≥ 256 bits), condicional `if/then` presente em `ArtifactRef` |
-| 11 | Campos sanitizados sem restrição estrutural | **GAP** — `AuditEvent.safe_payload` (valores), `VerificationCheck.safe_detail`, `VerificationCheck.evidence_ref` e `SafeFailure.message` são strings livres → P3-03 |
-| 12 | Forma de `ArtifactRef.ref` para artefatos não secretos | **GAP** — string livre até 256 caracteres, sem pattern que proíba `://`, path absoluto ou credencial embutida → P3-04 |
-| 13 | Varredura dura de secrets (9 padrões × 9 arquivos) | **PASS** — 0 hits |
-| 14 | Varredura de paths absolutos | **GAP documental** — 2 linhas (`docs/qa/project-center-v2-discovery-review.md:103` e `:269`) com citação histórica de `/home/...` → P3-05, evidência de achado já corrigido, não vazamento |
-| 15 | Hash SHA-256 dos 9 artefatos (integridade do insumo) | **PASS** — registrado na seção 3.4 |
+| #   | Verificação                                                        | Resultado                                                                                                                                                                                                                                                                      |
+| --- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Parse YAML/OpenAPI 3.1 do contrato                                 | **PASS** — `openapi: 3.1.0`, `version: 2.0.0-draft`                                                                                                                                                                                                                            |
+| 2   | Máquina de estados vs. enum canônico                               | **PASS** — 15 estados, 23 arestas, 0 alvos inválidos, 0 fontes ausentes, 0 terminais com saída, 0 não-terminais sem saída                                                                                                                                                      |
+| 3   | Aliases de estado nas projeções                                    | **GAP** — 4 ocorrências de candidatos: 3 em contexto explícito de proibição (`ux:272` `pending`/`running`, `ux:378` `needs_recovery`) e **1 residual em `threat-model:205` (`needs_reconcile`)** → P2-02                                                                       |
+| 4   | RBAC: `default: deny`, partição role→operação→scope                | **PASS** — `default=deny`, 5 roles, 9 `operationId`, 0 órfãs, 0 multi-role, 0 sem `x-required-scopes`                                                                                                                                                                          |
+| 5   | Verificabilidade da segregação de funções a partir do token        | **GAP** — `x-rbac-policy.segregation` declara `approver_must_be_human: true` e `agent_tokens_may_approve: false`, mas `bearerAuth` (`bearerFormat: scoped-token`) e a política não definem claim de tipo de ator (`actor_type`/`principal_type`/`token_kind` ausentes) → P2-01 |
+| 6   | `Idempotency-Key` obrigatória nas mutações                         | **PASS** — 7 mutações `POST`, 0 sem header                                                                                                                                                                                                                                     |
+| 7   | Rate limit declarado por mutação                                   | **GAP** — apenas `createProjectDryRun` declara `429`; as outras 6 mutações não → P3-01                                                                                                                                                                                         |
+| 8   | Entrada hostil: nenhum campo de comando/SQL/path/env/imagem        | **PASS** — 12 schemas de request, 0 campos proibidos (`command`, `sql`, `script`, `argv`, `shell`, `exec`, `path`, `mount`, `image`, `env`, `password`, `dsn`, `token`) e todos fechados (`additionalProperties: false` ou `oneOf`)                                            |
+| 9   | Confirmação de aprovação estruturalmente vinculada à frase exigida | **GAP** — `ApproveRequest.confirmation` e `RollbackApproveRequest.confirmation` são strings livres `minLength: 3`, sem `pattern` → P3-02                                                                                                                                       |
+| 10  | `SecretRef` opaca + máscara neutra                                 | **PASS** — `^sref_[A-Za-z0-9_-]{43,128}$`, exemplo com 49 caracteres (44 úteis ≥ 43 exigidos / ≥ 256 bits), condicional `if/then` presente em `ArtifactRef`                                                                                                                    |
+| 11  | Campos sanitizados sem restrição estrutural                        | **GAP** — `AuditEvent.safe_payload` (valores), `VerificationCheck.safe_detail`, `VerificationCheck.evidence_ref` e `SafeFailure.message` são strings livres → P3-03                                                                                                            |
+| 12  | Forma de `ArtifactRef.ref` para artefatos não secretos             | **GAP** — string livre até 256 caracteres, sem pattern que proíba `://`, path absoluto ou credencial embutida → P3-04                                                                                                                                                          |
+| 13  | Varredura dura de secrets (9 padrões × 9 arquivos)                 | **PASS** — 0 hits                                                                                                                                                                                                                                                              |
+| 14  | Varredura de paths absolutos                                       | **GAP documental** — 2 linhas (`docs/qa/project-center-v2-discovery-review.md:103` e `:269`) com citação histórica de `/home/...` → P3-05, evidência de achado já corrigido, não vazamento                                                                                     |
+| 15  | Hash SHA-256 dos 9 artefatos (integridade do insumo)               | **PASS** — registrado na seção 3.4                                                                                                                                                                                                                                             |
 
 ### 3.2 Gate versionado do pacote (execução própria)
 
@@ -70,48 +70,48 @@ Drift entre o head agregado e as branches retestadas, medido por mim (`git rev-p
 
 ### 3.3 Verificação das evidências do threat model contra o código real
 
-| Achado | Verificação independente | Conclusão |
-| --- | --- | --- |
-| TM-01 — autorização administrativa ausente | `src/routes/api/supabase-registry.ts:18,65` protege GET e POST apenas com `isAuthenticated`; `src/server/auth-middleware.ts:254-258` retorna `true` quando não há senha configurada | **Confirmado** |
-| TM-02 — API web acoplada a credencial equivalente a admin | `src/server/supabase-registry.ts:127-134` executa `execFileSync` com `docker compose exec db psql`; `:10` tem diretório de infra absoluto fixo; `:116` resolve socket Docker rootless | **Confirmado** |
-| TM-04 — confirmação textual não é approval | `src/screens/supabase/supabase-projects-screen.tsx:374-375`: o próprio cliente calcula e compara `CRIAR <slug>` | **Confirmado** |
-| TM-05 — controles de mutação incompletos | A rota legada não usa `requireJsonContentType`, ao contrário de 10+ outras rotas mutáveis do repositório | **Confirmado** |
-| TM-06 — erro do banco revela metadados internos | `src/server/supabase-registry.ts:188-198` propaga o detalhe `ERROR:` do PostgreSQL; `src/server/supabase-registry.test.ts:161` **afirma** que `platform_registry.projects` aparece na mensagem | **Confirmado** |
+| Achado                                                    | Verificação independente                                                                                                                                                                       | Conclusão      |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| TM-01 — autorização administrativa ausente                | `src/routes/api/supabase-registry.ts:18,65` protege GET e POST apenas com `isAuthenticated`; `src/server/auth-middleware.ts:254-258` retorna `true` quando não há senha configurada            | **Confirmado** |
+| TM-02 — API web acoplada a credencial equivalente a admin | `src/server/supabase-registry.ts:127-134` executa `execFileSync` com `docker compose exec db psql`; `:10` tem diretório de infra absoluto fixo; `:116` resolve socket Docker rootless          | **Confirmado** |
+| TM-04 — confirmação textual não é approval                | `src/screens/supabase/supabase-projects-screen.tsx:374-375`: o próprio cliente calcula e compara `CRIAR <slug>`                                                                                | **Confirmado** |
+| TM-05 — controles de mutação incompletos                  | A rota legada não usa `requireJsonContentType`, ao contrário de 10+ outras rotas mutáveis do repositório                                                                                       | **Confirmado** |
+| TM-06 — erro do banco revela metadados internos           | `src/server/supabase-registry.ts:188-198` propaga o detalhe `ERROR:` do PostgreSQL; `src/server/supabase-registry.test.ts:161` **afirma** que `platform_registry.projects` aparece na mensagem | **Confirmado** |
 
 Essa verificação é o que sustenta a classificação de severidade do threat model: o NO-GO não depende de uma narrativa sobre a implementação atual, mas de comportamento reproduzível no código do próprio head.
 
 ### 3.4 Integridade do insumo (SHA-256 dos 9 artefatos)
 
-| Artefato | SHA-256 |
-| --- | --- |
-| `docs/PRD-project-center-v2.md` | `fcb88c78548197ba54d1540a4f88f9280bb85fc6348cd865eb0982ed78fb15db` |
-| `docs/adr/0001-project-center-v2-control-plane.md` | `2623ee5e4230b0eb927701fde27fbe25b56fc0110a0f1e9363650277bc41e81f` |
-| `specs/contracts/project-center-v2.openapi.yaml` | `e303a391a0f543fc159766186f07986058cc62a6c18c1c382be5c3545b676f65` |
-| `specs/features/project-center-v2.spec.md` | `538e8cb0568b36c445b43a9ce74f318f73a1fc84196dcd8122dbc2d09cd657d6` |
-| `docs/security/project-center-v2-threat-model.md` | `eeb0c788304dc86cb25caba719832114bb09f7fcb537d36dc8629c08ff7e96d7` |
-| `docs/design/project-center-v2-ux.md` | `8de72ab4fc456984075372252fecf5d4c791ea1ea042cdefae9fd9e01a36b4de` |
+| Artefato                                              | SHA-256                                                            |
+| ----------------------------------------------------- | ------------------------------------------------------------------ |
+| `docs/PRD-project-center-v2.md`                       | `fcb88c78548197ba54d1540a4f88f9280bb85fc6348cd865eb0982ed78fb15db` |
+| `docs/adr/0001-project-center-v2-control-plane.md`    | `2623ee5e4230b0eb927701fde27fbe25b56fc0110a0f1e9363650277bc41e81f` |
+| `specs/contracts/project-center-v2.openapi.yaml`      | `e303a391a0f543fc159766186f07986058cc62a6c18c1c382be5c3545b676f65` |
+| `specs/features/project-center-v2.spec.md`            | `538e8cb0568b36c445b43a9ce74f318f73a1fc84196dcd8122dbc2d09cd657d6` |
+| `docs/security/project-center-v2-threat-model.md`     | `eeb0c788304dc86cb25caba719832114bb09f7fcb537d36dc8629c08ff7e96d7` |
+| `docs/design/project-center-v2-ux.md`                 | `8de72ab4fc456984075372252fecf5d4c791ea1ea042cdefae9fd9e01a36b4de` |
 | `docs/plans/project-center-v2-implementation-plan.md` | `dccb49797041bc0ee09fa69414959d4d14a89a3af4b550bdc6540683962903ce` |
-| `docs/qa/project-center-v2-discovery-review.md` | `948a97158d5ce9f436ca8770331353602186f62f7e9ce92d7aca9b56904934e7` |
-| `scripts/project-center-v2-discovery-retest.mjs` | `cd29636b16fc82ef3f0c9f5bed34e89c9111a5eb1cc5c75f52ac05733e6b6da7` |
+| `docs/qa/project-center-v2-discovery-review.md`       | `948a97158d5ce9f436ca8770331353602186f62f7e9ce92d7aca9b56904934e7` |
+| `scripts/project-center-v2-discovery-retest.mjs`      | `cd29636b16fc82ef3f0c9f5bed34e89c9111a5eb1cc5c75f52ac05733e6b6da7` |
 
 ## 4. Conformidade com os critérios do card
 
-| Critério exigido | Resultado | Evidência |
-| --- | --- | --- |
-| Least privilege | **PASS** | Role app/migration com atributos negativos explícitos e grants por objeto (threat model §4.2, I-06); `platform_worker` sem operação HTTP; `host_target` restrito a um ID de allowlist; provisionador dedicado sem credencial global (ADR, §3) |
-| Default deny | **PASS** | `x-rbac-policy.default: deny` com 5 roles e 9 `operationId` particionados (check #4); I-05 exige bloqueio quando auth/RBAC/secret store/lock/policy R2 não estiverem configurados |
-| Idempotência | **PASS** | `Idempotency-Key` obrigatória nas 7 mutações (check #6); chave client-owned persistida antes do primeiro POST, servidor guarda só o hash, fingerprint canônico, lock por `project_uuid`, `409 IDEMPOTENCY_KEY_REUSED` |
-| Auditoria | **PASS com P3-03** | Eventos append-only com `actor_ref`, `project_uuid`, `plan_hash`, `approval_id`, hash da chave e correlation ID (I-13, spec §13); o contrato não restringe estruturalmente os campos sanitizados |
-| Blast radius | **PASS** | Isolamento por database/role (I-06) e por stack/rede/data store/keys/domínio (I-07); três fases de rollback com plano e aprovação próprios; falha sem prova segura termina em `manual_intervention_required` sem delete cego |
-| Proibir DSN/senha/JWT/service key | **PASS** | Check #13: 0 hits em 9 arquivos e 9 padrões duros; `SecretRef` opaca com `sref_` + ≥ 256 bits CSPRNG; redaction obrigatória antes da serialização |
-| Proibir shell/SQL livre | **PASS** | Check #8: nenhum campo de comando/SQL/argv/script nos 12 schemas de request; ações do planner são enum fechado; `resolvedor` recusado no ADR ("shell/SQL administrativo com aprovação" rejeitado explicitamente) |
-| Proibir paths não allowlisted | **PASS** | `host_target` é enum de allowlist; nomes de database/role/rede/volume/prefixo R2 derivados server-side do `project_uuid` + slug validado; I-09 exige confinamento por `realpath`/openat-safe; ressalva P3-04 em `ArtifactRef.ref` |
-| Gate DDL | **PASS** | PR 1–3 do plano são puros/dry-run sem DDL; worker desligado por `PROJECT_CENTER_V2_WORKER_ENABLED=false`; PR 4 só enfileira |
-| Gate Docker | **PASS** | Stack isolada por projeto, imagens pinadas por digest, templates versionados, socket apenas no provisionador rootless (ADR, checks #8) |
-| Gate R2 | **PASS** | Prefixo derivado por `project_uuid`/ambiente, credencial scoped por prefixo, manifesto/checksum, negativa de restore cruzado (I-12, §11) |
-| Gate restore | **PASS** | Restore só em destino vazio/efêmero do mesmo projeto, com validação de manifesto e aprovação separada para produção |
-| Gate rollback | **PASS** | `rollback/dry-run` → `rollback/approve` → `rollback/execute`, com `rollback_plan_hash`, novo `approval_id`, revalidação de ownership/drift e segundo ator humano em ação destrutiva |
-| APPROVE ou REQUEST_CHANGES com evidência | **APPROVE (condicionado)** | Seções 1, 3 e 7 |
+| Critério exigido                         | Resultado                  | Evidência                                                                                                                                                                                                                                     |
+| ---------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Least privilege                          | **PASS**                   | Role app/migration com atributos negativos explícitos e grants por objeto (threat model §4.2, I-06); `platform_worker` sem operação HTTP; `host_target` restrito a um ID de allowlist; provisionador dedicado sem credencial global (ADR, §3) |
+| Default deny                             | **PASS**                   | `x-rbac-policy.default: deny` com 5 roles e 9 `operationId` particionados (check #4); I-05 exige bloqueio quando auth/RBAC/secret store/lock/policy R2 não estiverem configurados                                                             |
+| Idempotência                             | **PASS**                   | `Idempotency-Key` obrigatória nas 7 mutações (check #6); chave client-owned persistida antes do primeiro POST, servidor guarda só o hash, fingerprint canônico, lock por `project_uuid`, `409 IDEMPOTENCY_KEY_REUSED`                         |
+| Auditoria                                | **PASS com P3-03**         | Eventos append-only com `actor_ref`, `project_uuid`, `plan_hash`, `approval_id`, hash da chave e correlation ID (I-13, spec §13); o contrato não restringe estruturalmente os campos sanitizados                                              |
+| Blast radius                             | **PASS**                   | Isolamento por database/role (I-06) e por stack/rede/data store/keys/domínio (I-07); três fases de rollback com plano e aprovação próprios; falha sem prova segura termina em `manual_intervention_required` sem delete cego                  |
+| Proibir DSN/senha/JWT/service key        | **PASS**                   | Check #13: 0 hits em 9 arquivos e 9 padrões duros; `SecretRef` opaca com `sref_` + ≥ 256 bits CSPRNG; redaction obrigatória antes da serialização                                                                                             |
+| Proibir shell/SQL livre                  | **PASS**                   | Check #8: nenhum campo de comando/SQL/argv/script nos 12 schemas de request; ações do planner são enum fechado; `resolvedor` recusado no ADR ("shell/SQL administrativo com aprovação" rejeitado explicitamente)                              |
+| Proibir paths não allowlisted            | **PASS**                   | `host_target` é enum de allowlist; nomes de database/role/rede/volume/prefixo R2 derivados server-side do `project_uuid` + slug validado; I-09 exige confinamento por `realpath`/openat-safe; ressalva P3-04 em `ArtifactRef.ref`             |
+| Gate DDL                                 | **PASS**                   | PR 1–3 do plano são puros/dry-run sem DDL; worker desligado por `PROJECT_CENTER_V2_WORKER_ENABLED=false`; PR 4 só enfileira                                                                                                                   |
+| Gate Docker                              | **PASS**                   | Stack isolada por projeto, imagens pinadas por digest, templates versionados, socket apenas no provisionador rootless (ADR, checks #8)                                                                                                        |
+| Gate R2                                  | **PASS**                   | Prefixo derivado por `project_uuid`/ambiente, credencial scoped por prefixo, manifesto/checksum, negativa de restore cruzado (I-12, §11)                                                                                                      |
+| Gate restore                             | **PASS**                   | Restore só em destino vazio/efêmero do mesmo projeto, com validação de manifesto e aprovação separada para produção                                                                                                                           |
+| Gate rollback                            | **PASS**                   | `rollback/dry-run` → `rollback/approve` → `rollback/execute`, com `rollback_plan_hash`, novo `approval_id`, revalidação de ownership/drift e segundo ator humano em ação destrutiva                                                           |
+| APPROVE ou REQUEST_CHANGES com evidência | **APPROVE (condicionado)** | Seções 1, 3 e 7                                                                                                                                                                                                                               |
 
 ## 5. Achados
 
