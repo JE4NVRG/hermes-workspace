@@ -12,7 +12,10 @@ import {
   resolveProjectCenterV2Flags,
 } from './feature-flags'
 import { appRoleNameFor, buildNamingSnapshot } from './naming'
-import { createInMemoryLeaseStore } from './lease-store'
+import {
+  LEASE_HOLDER_REF_MAX_LENGTH,
+  createInMemoryLeaseStore,
+} from './lease-store'
 import { createInMemoryOutboxStore } from './idempotency'
 import { transitionOperation } from './state-machine'
 import {
@@ -173,7 +176,9 @@ interface DriverHarness {
   }) => void
 }
 
-function createFakeDriverExecutor(): DriverHarness {
+function createFakeDriverExecutor(
+  beforeExecute?: (input: DriverActionInput, index: number) => Promise<void>,
+): DriverHarness {
   const calls: Array<DriverActionInput> = []
   const argvs: Array<ReadonlyArray<string>> = []
   let failure: { actionId: string | null; retryable: boolean } = {
@@ -193,6 +198,9 @@ function createFakeDriverExecutor(): DriverHarness {
       supported_actions: ACTIONS.map((action) => action.kind),
       execute: async (input: DriverActionInput) => {
         calls.push(input)
+        // Gancho de concorrência: permite segurar uma passagem dentro da ação
+        // enquanto outra passagem do worker tenta o mesmo escopo.
+        await beforeExecute?.(input, calls.length - 1)
         if (input.template !== null) {
           const template = input.template
           argvs.push(renderActionTemplate(template, input.params))
@@ -217,6 +225,8 @@ function createFakeDriverExecutor(): DriverHarness {
 
 interface Harness {
   readonly worker: ReturnType<typeof createWorker>
+  /** Dependências compartilhadas: permite uma segunda instância do worker. */
+  readonly deps: WorkerDeps
   readonly driver: DriverHarness
   readonly operations: ReturnType<typeof createFakeOperationStore>
   readonly outbox: ReturnType<typeof createInMemoryOutboxStore>
@@ -241,6 +251,13 @@ function createHarness(
     readonly kind?: OutboxEntry['kind']
     readonly observedRevision?: string
     readonly resources?: ReadonlyArray<OwnedResource>
+    /** `null` deixa o worker usar a identidade default (uma por instância). */
+    readonly holderRef?: string | null
+    /** Gancho de concorrência repassado ao adapter fake. */
+    readonly beforeExecute?: (
+      input: DriverActionInput,
+      index: number,
+    ) => Promise<void>
   } = {},
 ): Harness {
   const baseOperation = options.operation ?? buildOperation()
@@ -258,7 +275,7 @@ function createHarness(
     now: () => new Date('2026-09-25T12:00:00.000Z'),
     generateId: () => '33333333-3333-4333-8333-333333333333',
   })
-  const driver = createFakeDriverExecutor()
+  const driver = createFakeDriverExecutor(options.beforeExecute)
   const actions = createActionExecutor({
     flags: options.flags ?? FLAGS_ON,
     leases,
@@ -325,6 +342,11 @@ function createHarness(
     rollbackPlans.put(baseOperation.operation_id, operationRollback)
   }
 
+  // Identidade de processo do worker: por default derivada da instância
+  // (`pid` + id aleatório), nunca uma constante compartilhável entre processos.
+  const holderRef: string | null =
+    options.holderRef === undefined ? HOLDER : options.holderRef
+
   const deps: WorkerDeps = {
     approvals,
     rollbackPlans,
@@ -341,13 +363,14 @@ function createHarness(
     context,
     publisher: { adapter_id: 'fake-publisher', publish: publish as never },
     rollback,
-    holderRef: HOLDER,
+    ...(holderRef === null ? {} : { holderRef }),
     now: () => new Date('2026-09-25T12:00:00.000Z'),
   }
 
   const worker = createWorker(deps)
   return {
     worker,
+    deps,
     driver,
     operations,
     outbox,
@@ -816,6 +839,77 @@ describe('worker — rollback', () => {
 
     expect(result.entries[0]?.safe_detail).toContain('rollback_sem_aprovacao')
     expect(harness.rollbackExecute).not.toHaveBeenCalled()
+  })
+})
+
+describe('worker — exclusividade de lease entre processos (F1)', () => {
+  it('o holder_ref default é único por instância, nunca uma constante reaproveitável', () => {
+    const first = createHarness({ holderRef: null }).worker
+    const second = createHarness({ holderRef: null }).worker
+
+    expect(first.holder_ref).not.toBe('pcv2-worker')
+    expect(second.holder_ref).not.toBe('pcv2-worker')
+    expect(first.holder_ref).not.toBe(second.holder_ref)
+    // Forma: `pid` do processo + identificador aleatório por instância.
+    const identity = new RegExp(
+      `^${process.pid}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`,
+    )
+    expect(first.holder_ref).toMatch(identity)
+    expect(second.holder_ref).toMatch(identity)
+    expect(first.holder_ref.length).toBeLessThanOrEqual(
+      LEASE_HOLDER_REF_MAX_LENGTH,
+    )
+    expect(second.holder_ref.length).toBeLessThanOrEqual(
+      LEASE_HOLDER_REF_MAX_LENGTH,
+    )
+  })
+
+  it('duas passagens concorrentes não entregam a mesma ação duas vezes ao adapter', async () => {
+    let release: () => void = () => {}
+    const holdFirstAction = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let notify: () => void = () => {}
+    const insideFirstAction = new Promise<void>((resolve) => {
+      notify = resolve
+    })
+    let held = false
+
+    const harness = createHarness({
+      // Sem holderRef explícito: cada instância tem a própria identidade
+      // default — exatamente o cenário que a identidade constante quebrava.
+      holderRef: null,
+      beforeExecute: async (_input, index) => {
+        if (index !== 0 || held) return
+        held = true
+        notify()
+        await holdFirstAction
+      },
+    })
+    const contender = createWorker(harness.deps)
+
+    const winner = harness.worker.runOnce()
+    await insideFirstAction
+    // A segunda passagem concorre pelo MESMO escopo (environment + project_id)
+    // enquanto a primeira está dentro da primeira ação.
+    const loser = await contender.runOnce()
+
+    expect(harness.driver.calls.map((call) => call.action.action_id)).toEqual([
+      'act_create_database',
+    ])
+    expect(loser.entries[0]?.status).toBe('skipped')
+    expect(loser.entries[0]?.safe_detail).toContain('LeaseHeldError')
+
+    release()
+    const winnerResult = await winner
+
+    expect(winnerResult.entries[0]?.status).toBe('processed')
+    // Cada ação chegou ao adapter exatamente uma vez (sem entrega dupla).
+    expect(harness.driver.calls.map((call) => call.action.action_id)).toEqual([
+      'act_create_database',
+      'act_create_app_role',
+    ])
+    expect(harness.operations.current().state).toBe('verifying')
   })
 })
 

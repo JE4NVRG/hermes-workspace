@@ -34,7 +34,7 @@ import {
   sha256Hex,
 } from '../drivers/types'
 import { requireWorkerActive } from '../feature-flags'
-import { redactText } from '../redaction'
+import { redactText, safeEvidenceRef } from '../redaction'
 import { POSTGRES_IDENTIFIER_PATTERN } from '../naming'
 import type {
   Driver,
@@ -1079,12 +1079,13 @@ export function createActionExecutor(deps: ActionExecutorDeps): ActionExecutor {
         plan_target_ref: action.target_ref,
       },
     })
+    // `evidence_ref` é dado não confiável do adapter: passa por redaction e
+    // pela forma do contrato (teto de 256, sem URI/path/`..`), como o resto.
+    const evidenceRef = safeEvidenceRef(result.evidence_ref)
     return {
       status: result.status,
       safe_detail: result.safe_detail,
-      ...(result.evidence_ref === undefined
-        ? {}
-        : { evidence_ref: result.evidence_ref }),
+      ...(evidenceRef === null ? {} : { evidence_ref: evidenceRef }),
     }
   }
 
@@ -1191,7 +1192,7 @@ export function createActionExecutor(deps: ActionExecutorDeps): ActionExecutor {
             adapter_id: deps.backups.adapter_id,
             executor_version: ACTION_EXECUTOR_VERSION,
             safe_detail: redactText(configured.safe_detail).slice(0, 300),
-            evidence_ref: configured.evidence_ref ?? null,
+            evidence_ref: safeEvidenceRef(configured.evidence_ref),
             failure: null,
             argv_digest: sha256Hex(
               canonicalJson({ channel: 'backup', action_id: parsed.action_id }),
@@ -1200,12 +1201,13 @@ export function createActionExecutor(deps: ActionExecutorDeps): ActionExecutor {
           })
         }
         if (isProcess) {
-          // 11. template fechado por driver:kind e coerente com o declarado.
+          // 11. template fechado por driver:kind e coerente com o declarado —
+          // igualdade **exata**: sufixo (`'database'` casando com
+          // `'pg-create-database'`) não é aceito (O1 do cross-review).
           template = templateFor(parsed.kind, context.driver)
           if (
             context.templateId !== undefined &&
-            context.templateId !== template.template_id &&
-            !template.template_id.endsWith(context.templateId)
+            context.templateId !== template.template_id
           ) {
             throw new ActionNotAllowedError(parsed.kind, 'template_id_mismatch')
           }
@@ -1245,7 +1247,7 @@ export function createActionExecutor(deps: ActionExecutorDeps): ActionExecutor {
         adapter_id: adapterId,
         executor_version: ACTION_EXECUTOR_VERSION,
         safe_detail: redactText(outcome.safe_detail).slice(0, 300),
-        evidence_ref: outcome.evidence_ref ?? null,
+        evidence_ref: safeEvidenceRef(outcome.evidence_ref),
         failure: outcome.failure ?? null,
         argv_digest: sha256Hex(
           canonicalJson({

@@ -18,10 +18,15 @@
  * - publicação só acontece depois de health + isolamento + backup/restore
  *   PASS; sem publisher injetado a operação **não** é dada como concluída;
  * - o lease é sempre liberado no fim (sucesso, falha ou exceção);
+ * - a identidade do worker (`holder_ref`) é **por processo** (`pid` + id
+ *   aleatório por instância); nunca uma constante compartilhável, de modo que
+ *   duas réplicas não apresentem o mesmo fencing token (§9);
  * - nenhuma saída carrega segredo: só nomes derivados e detalhes já
  *   sanitizados pelo executor.
  */
+import { randomUUID } from 'node:crypto'
 import { requireWorkerActive } from './feature-flags'
+import { leaseScopeKey } from './lease-store'
 import {
   NAMING_VERSION,
   appRoleNameFor,
@@ -54,7 +59,7 @@ import type {
   OperationApprovalStore,
   RollbackPlanStore,
 } from './approval-service'
-import type { LeaseStore } from './lease-store'
+import type { LeaseGrant, LeaseStore } from './lease-store'
 import type {
   ActionExecutor,
   ActionOutcome,
@@ -393,6 +398,19 @@ export interface RevalidationInput {
 /**
  * Revalida tudo que o worker exige antes de tocar no mundo. Devolve o motivo
  * em caso de recusa, nunca executa por aproximação.
+ *
+ * Decisão registrada (O2 do cross-review de Security do PR 6): o passo 2 do
+ * plano pede revalidação de "policy" antes de cada ação, mas o caminho de
+ * execução **não** chama o policy engine nem relê `policy_version`. O
+ * enforcement é estrutural e está ancorado aqui: (a) catálogo fechado de ações
+ * e de templates no executor — `kind`/`target_ref` fora do contrato morrem
+ * antes de qualquer adapter; (b) a aprovação é vinculada ao `plan_hash`, que
+ * cobre `policy_version` do plano aprovado (divergência de hash recusa a
+ * entrada acima); (c) `observed_revision` do momento da execução tem de ser a
+ * do plano; (d) estado da operação e lease exclusivo com fencing token atual.
+ * Acrescentar um check de `policy_version` em runtime exigiria injetar o
+ * policy engine no worker — fora do escopo do PR 6 e sem ganho enquanto a
+ * aprovação continuar amarrada ao hash do plano.
  */
 export function revalidateEntry(input: RevalidationInput): void {
   requireWorkerActive(input.flags)
@@ -465,10 +483,68 @@ export function revalidateEntry(input: RevalidationInput): void {
 
 export function createWorker(deps: WorkerDeps): Worker {
   const now = deps.now ?? (() => new Date())
-  const holderRef = deps.holderRef ?? 'pcv2-worker'
+  /**
+   * Identidade **do processo** do worker (§9).
+   *
+   * O default é único por instância (`pid` + id aleatório): uma constante
+   * reaproveitável permitiria a duas réplicas (ou a dois ticks sobrepostos)
+   * apresentarem o mesmo `holder_ref`/`fencing_token` e entregarem o mesmo
+   * DDL/destrutivo duas vezes sem que o fencing detectasse — é o F1 do
+   * cross-review de Security. Com identidade por instância, a segunda passagem
+   * recebe `409 OPERATION_LOCKED` do store.
+   */
+  const holderRef = deps.holderRef ?? `${process.pid}-${randomUUID()}`
   const attemptCounts = new Map<string, number>()
   const inFlight = new Set<string>()
   const journal = deps.journal ?? createInMemoryOutboxJournal()
+  /**
+   * Leases adquiridos por **esta** instância, por escopo. Serve só como prova
+   * de posse para o retry do próprio processo (o `lease_id` nunca sai daqui
+   * para outro processo) — nunca como identidade compartilhável.
+   */
+  const ownedLeases = new Map<string, LeaseGrant>()
+
+  /**
+   * Aquisição com prova de posse: se esta instância já detém o lease do
+   * escopo, o retry apresenta o `lease_id` que recebeu (reaquisição idempotente
+   * sem token novo); sem essa prova o store recusa com 409, que é o que
+   * acontece com qualquer outro processo.
+   */
+  function acquireLease(operation: Operation): LeaseGrant {
+    const scopeKey = leaseScopeKey({
+      projectId: operation.project_id,
+      environment: operation.environment,
+    })
+    const owned = ownedLeases.get(scopeKey)
+    const proof =
+      owned !== undefined && owned.operation_id === operation.operation_id
+        ? owned.lease_id
+        : undefined
+    const lease = deps.leases.acquire({
+      operationId: operation.operation_id,
+      projectId: operation.project_id,
+      environment: operation.environment,
+      holderRef,
+      ...(proof === undefined ? {} : { leaseId: proof }),
+    })
+    ownedLeases.set(scopeKey, lease)
+    return lease
+  }
+
+  /** Libera o lease da passagem; a posse local é esquecida em qualquer caso. */
+  function releaseLease(lease: LeaseGrant): void {
+    try {
+      deps.leases.release({
+        leaseId: lease.lease_id,
+        fencingToken: lease.fencing_token,
+        holderRef,
+      })
+    } catch {
+      // Lease já expirado/liberado: nada a compensar aqui.
+    } finally {
+      ownedLeases.delete(lease.scope_key)
+    }
+  }
 
   function attemptsFor(entry: OutboxEntry): number {
     return attemptCounts.get(entry.outbox_id) ?? entry.attempt
@@ -552,12 +628,7 @@ export function createWorker(deps: WorkerDeps): Worker {
       operation: input.operation,
       naming: input.naming,
     })
-    const lease = deps.leases.acquire({
-      operationId: input.operation.operation_id,
-      projectId: input.operation.project_id,
-      environment: input.operation.environment,
-      holderRef,
-    })
+    const lease = acquireLease(input.operation)
     const outcomes: Array<ActionOutcome> = []
     try {
       for (const action of input.actions) {
@@ -610,15 +681,7 @@ export function createWorker(deps: WorkerDeps): Worker {
       return { outcomes: Object.freeze(outcomes), failed: null }
     } finally {
       // O lease nunca sobrevive à passagem, com ou sem falha.
-      try {
-        deps.leases.release({
-          leaseId: lease.lease_id,
-          fencingToken: lease.fencing_token,
-          holderRef,
-        })
-      } catch {
-        // Lease já expirado/liberado: nada a compensar aqui.
-      }
+      releaseLease(lease)
     }
   }
 
@@ -877,12 +940,7 @@ export function createWorker(deps: WorkerDeps): Worker {
       operation: current,
       naming,
     })
-    const lease = deps.leases.acquire({
-      operationId: current.operation_id,
-      projectId: current.project_id,
-      environment: current.environment,
-      holderRef,
-    })
+    const lease = acquireLease(current)
     let result: Awaited<ReturnType<RollbackService['execute']>>
     try {
       result = await deps.rollback.execute({
@@ -902,15 +960,7 @@ export function createWorker(deps: WorkerDeps): Worker {
         endpoint: contextPort.endpoint,
       })
     } finally {
-      try {
-        deps.leases.release({
-          leaseId: lease.lease_id,
-          fencingToken: lease.fencing_token,
-          holderRef,
-        })
-      } catch {
-        // Lease já expirado/liberado: nada a compensar aqui.
-      }
+      releaseLease(lease)
     }
 
     const next = deps.operations.transition(

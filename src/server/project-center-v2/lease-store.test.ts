@@ -27,6 +27,13 @@ const OPERATION_A = '11111111-1111-4111-8111-111111111111'
 const OPERATION_B = '22222222-2222-4222-8222-222222222222'
 const HOLDER_A = 'worker-a'
 const HOLDER_B = 'worker-b'
+/**
+ * Identidades de processo (não compartilháveis): formato do default do
+ * `createWorker` — `pid` + id aleatório por instância.
+ */
+const HOLDER_PROCESS_A = '4242-9c1f5d3e-0000-4000-8000-000000000001'
+const HOLDER_PROCESS_B = '4242-9c1f5d3e-0000-4000-8000-000000000002'
+const UNKNOWN_LEASE_ID = '99999999-9999-4999-8999-999999999999'
 
 const SCOPE_A = {
   projectId: PROJECT_A,
@@ -117,17 +124,74 @@ describe('lease store — aquisição exclusiva', () => {
     expect(harness.store.highestFencingToken(SCOPE_A)).toBe(first.fencing_token)
   })
 
-  it('reaquisição idempotente do mesmo holder/operação devolve o mesmo lease', () => {
+  it('reaquisição idempotente exige provar posse do lease vigente', () => {
     const harness = createHarness()
     const first = acquire(harness)
     harness.advance(LEASE_RENEW_INTERVAL_SECONDS)
-    const again = acquire(harness)
+
+    // Mesmo `holder_ref` + mesma operação **sem** o `lease_id` do lease
+    // vigente não reabre o lock: quem não prova posse recebe 409. Antes desta
+    // regra, a identidade default compartilhada reabria o lock para qualquer
+    // processo (F1 do cross-review de Security).
+    expect(() => acquire(harness)).toThrow(LeaseHeldError)
+
+    // Retry legítimo do mesmo dono: apresenta o `lease_id` do próprio lease e
+    // recebe o mesmo grant, sem token novo e sem invalidar a própria escrita.
+    const again = acquire(harness, { leaseId: first.lease_id })
 
     expect(again.lease_id).toBe(first.lease_id)
     expect(again.fencing_token).toBe(first.fencing_token)
     expect(harness.store.highestFencingToken(SCOPE_A)).toBe(
       LEASE_FIRST_FENCING_TOKEN,
     )
+  })
+
+  it('duas identidades de processo na mesma operação: a segunda recebe 409 e nunca o grant', () => {
+    const harness = createHarness()
+    const first = acquire(harness, { holderRef: HOLDER_PROCESS_A })
+
+    const attempts: ReadonlyArray<
+      Partial<Parameters<LeaseStore['acquire']>[0]>
+    > = [
+      // Identidade de outro processo para a mesma operação.
+      { holderRef: HOLDER_PROCESS_B },
+      // Nem apresentando o `lease_id` alheio: posse se prova, não se copia.
+      { holderRef: HOLDER_PROCESS_B, leaseId: first.lease_id },
+      // Mesma identidade, lease_id que não é o vigente.
+      { holderRef: HOLDER_PROCESS_A, leaseId: UNKNOWN_LEASE_ID },
+    ]
+
+    for (const overrides of attempts) {
+      let error: unknown = null
+      try {
+        acquire(harness, overrides)
+      } catch (caught) {
+        error = caught
+      }
+      expect(error).toBeInstanceOf(LeaseHeldError)
+      expect((error as LeaseHeldError).code).toBe('OPERATION_LOCKED')
+      expect((error as LeaseHeldError).status).toBe(409)
+      expect(
+        (error as LeaseHeldError).retry_after_seconds,
+      ).toBeGreaterThanOrEqual(1)
+    }
+
+    // O grant vigente continua sendo o primeiro; nenhum token novo foi emitido
+    // e nenhuma das tentativas recebeu lease_id/fencing_token do concorrente.
+    expect(harness.store.current(SCOPE_A)?.lease_id).toBe(first.lease_id)
+    expect(harness.store.current(SCOPE_A)?.fencing_token).toBe(
+      first.fencing_token,
+    )
+    expect(harness.store.highestFencingToken(SCOPE_A)).toBe(first.fencing_token)
+    // A identidade distinta também não escreve com o token do concorrente.
+    expect(() =>
+      harness.store.assertWriter({
+        scope: SCOPE_A,
+        leaseId: first.lease_id,
+        fencingToken: first.fencing_token,
+        holderRef: HOLDER_PROCESS_B,
+      }),
+    ).toThrow(LeaseLostError)
   })
 
   it('escopos distintos (projeto ou ambiente) não se bloqueiam', () => {
@@ -277,6 +341,23 @@ describe('lease store — renovação, liberação e fencing', () => {
     ).toBe(second.lease_id)
   })
 
+  it('assertWriter recusa token forjado acima do lease vigente', () => {
+    const harness = createHarness()
+    const grant = acquire(harness)
+
+    expect(() =>
+      harness.store.assertWriter({
+        scope: SCOPE_A,
+        leaseId: grant.lease_id,
+        fencingToken: grant.fencing_token + 1,
+        holderRef: HOLDER_A,
+      }),
+    ).toThrow(StaleWriterError)
+    expect(harness.store.current(SCOPE_A)?.fencing_token).toBe(
+      grant.fencing_token,
+    )
+  })
+
   it('assertWriter distingue lease/holder errado de lease ausente', () => {
     const harness = createHarness()
     const grant = acquire(harness)
@@ -367,6 +448,17 @@ describe('lease store — entradas fechadas', () => {
       LeaseInputError,
     )
     expect(() => acquire(harness, { operationId: 'short' })).toThrow(
+      LeaseInputError,
+    )
+  })
+
+  it('recusa prova de posse com forma invalida', () => {
+    const harness = createHarness()
+    expect(() => acquire(harness, { leaseId: '' })).toThrow(LeaseInputError)
+    expect(() => acquire(harness, { leaseId: 'lease id' })).toThrow(
+      LeaseInputError,
+    )
+    expect(() => acquire(harness, { leaseId: 'lease/id' })).toThrow(
       LeaseInputError,
     )
   })

@@ -7,7 +7,11 @@
  * maior fencing token pode persistir resultado; writer stale é recusado.
  *
  * Falha de aquisição é `409 OPERATION_LOCKED` com `retry_after_seconds`, sem
- * revelar o outro ator (§9). Este módulo é puro em relação a I/O: nenhum
+ * revelar o outro ator (§9). A única reaquisição concedida é a do próprio dono
+ * **com prova de posse** (`lease_id` apresentado por quem recebeu o grant):
+ * `holder_ref` + `operation_id` idênticos não reabrem o lock, porque a
+ * identidade do worker nunca pode ser uma constante compartilhada entre
+ * processos. Este módulo é puro em relação a I/O: nenhum
  * banco, Docker, shell, secret ou path. A persistência durável do deployment é
  * injetada por interface (`LeaseStore`) e o in-memory é o fixture de teste.
  *
@@ -35,6 +39,7 @@ export const LEASE_FIRST_FENCING_TOKEN = 1
 export const LEASE_PROJECT_ID_MAX_LENGTH = 48
 export const LEASE_HOLDER_REF_MAX_LENGTH = 128
 export const LEASE_OPERATION_ID_MAX_LENGTH = 128
+export const LEASE_LEASE_ID_MAX_LENGTH = 128
 export const LEASE_SCOPE_SEPARATOR = ':'
 
 export interface LeaseScope {
@@ -127,6 +132,17 @@ export interface AcquireLeaseInput {
   readonly environment: Environment
   readonly holderRef: string
   readonly ttlSeconds?: number
+  /**
+   * Prova de posse do lease vigente: o `lease_id` que o próprio dono recebeu.
+   *
+   * A reaquisição idempotente (retry do mesmo dono, sem token novo) só é
+   * concedida a quem apresenta esta prova. `holder_ref` + `operation_id`
+   * iguais **não** bastam: duas réplicas do mesmo worker com identidade
+   * compartilhada receberiam o mesmo `lease_id`/`fencing_token` e o fencing
+   * deixaria de detectar a execução dupla (F1 do cross-review de Security).
+   * Sem a prova, a resposta é `409 OPERATION_LOCKED`, sem revelar o outro ator.
+   */
+  readonly leaseId?: string
 }
 
 export interface RenewLeaseInput {
@@ -221,6 +237,25 @@ function assertOperationId(value: unknown): string {
   return value
 }
 
+/**
+ * Prova de posse apresentada na reaquisição: quando informada, precisa ter
+ * forma de identificador de lease (nunca path, espaço ou URI).
+ */
+function assertLeaseProof(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > LEASE_LEASE_ID_MAX_LENGTH ||
+    /\s/.test(value) ||
+    value.includes('/') ||
+    value.includes('\\')
+  ) {
+    throw new LeaseInputError('lease_id')
+  }
+  return value
+}
+
 function assertFencingToken(value: unknown): number {
   if (
     typeof value !== 'number' ||
@@ -309,13 +344,20 @@ export function createInMemoryLeaseStore(
       const holderRef = assertHolderRef(input.holderRef)
       const operationId = assertOperationId(input.operationId)
       const ttlSeconds = assertTtl(input.ttlSeconds)
+      const leaseProof = assertLeaseProof(input.leaseId)
       const at = reference()
 
       const currentGrant = live(scopeKey, at)
       if (currentGrant !== null) {
-        // Reaquisição idempotente do mesmo dono não emite token novo — caso
-        // contrário um retry do próprio worker invalidaria a própria escrita.
+        // Reaquisição idempotente **só com prova de posse**: o retry do próprio
+        // dono apresenta o `lease_id` que recebeu e não emite token novo (caso
+        // contrário invalidaria a própria escrita). Identidade igual não é
+        // prova — dois processos com a mesma `holder_ref` não compartilham o
+        // lock, e a tentativa sem prova recebe 409 como qualquer concorrente.
+        const provesPossession =
+          leaseProof !== undefined && leaseProof === currentGrant.lease_id
         if (
+          provesPossession &&
           currentGrant.holder_ref === holderRef &&
           currentGrant.operation_id === operationId
         ) {

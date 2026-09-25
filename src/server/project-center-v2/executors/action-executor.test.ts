@@ -367,6 +367,30 @@ describe('action executor — flags e catálogo fechado', () => {
     expect(harness.calls()).toBe(0)
   })
 
+  it('recusa template declarado por sufixo: a comparacao e igualdade exata', async () => {
+    const harness = createHarness()
+
+    // `'database'` casaria por sufixo com `'pg-create-database'` (O1 do
+    // cross-review): com a igualdade exata, é tratado como divergente.
+    await expect(
+      harness.executor.execute({
+        action: plannedAction(),
+        context: { ...harness.context, templateId: 'database' },
+        observedRevision: OBSERVED_REVISION,
+      }),
+    ).rejects.toBeInstanceOf(ActionNotAllowedError)
+    expect(harness.calls()).toBe(0)
+
+    // O `template_id` exato do catálogo continua aceito.
+    const accepted = await harness.executor.execute({
+      action: plannedAction(),
+      context: { ...harness.context, templateId: 'pg-create-database' },
+      observedRevision: OBSERVED_REVISION,
+    })
+    expect(accepted.status).toBe('succeeded')
+    expect(harness.calls()).toBe(1)
+  })
+
   it('delega ações de control plane à porta dedicada', async () => {
     const withPort = createHarness({ controlPlane: true })
     const outcome = await withPort.executor.execute({

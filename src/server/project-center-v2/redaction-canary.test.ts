@@ -26,13 +26,18 @@ import {
   toSafePayload,
 } from './redaction'
 import { buildNamingSnapshot } from './naming'
+import { createActionExecutor } from './executors/action-executor'
+import { createInMemoryLeaseStore } from './lease-store'
+import { resolveProjectCenterV2Flags } from './feature-flags'
 import {
   createInMemorySecretMaterialStore,
   createSecretBroker,
 } from './secret-broker'
 import { createPostgresqlExecutor } from './executors/postgresql-executor'
 import type {
+  ActionExecutionContext,
   DriverActionInput,
+  DriverExecutor,
   ProcessAdapter,
   ProcessBinary,
   ProcessRunResult,
@@ -314,5 +319,204 @@ describe('canario P3-03 — payload sanitizado vivo', () => {
     expectNoLiveValue(text)
     expect(text).toContain(PATH_MASK)
     expect(redactText('operacao concluida')).toBe('operacao concluida')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `evidence_ref` do produtor real (`ActionOutcome.evidence_ref`, PR 6)
+// ---------------------------------------------------------------------------
+//
+// O gate P3-03 exige prova viva no campo: um adapter (driver, canal de backup
+// ou control plane) devolve valor sensível em `evidence_ref` e o produtor real
+// (`createActionExecutor`) tem de entregá-lo redigido e dentro da forma aceita
+// — ou descartado. Nada de asserção sobre campo do broker: o valor entra pelo
+// adapter e sai pelo `ActionOutcome`.
+
+const FLAGS_ON = resolveProjectCenterV2Flags({
+  PROJECT_CENTER_V2_ENABLED: 'true',
+  PROJECT_CENTER_V2_WORKER_ENABLED: 'true',
+})
+const EVIDENCE_OPERATION_ID = '55555555-5555-4555-8555-555555555555'
+const EVIDENCE_HOLDER = '4242-9c1f5d3e-0000-4000-8000-000000000003'
+const BENIGN_EVIDENCE_REF = `broker-binding:${PROJECT_ID}:app-role`
+/** Path absoluto Windows montado sem literal de barra invertida dupla. */
+const WINDOWS_ABSOLUTE_PATH = ['C:', 'Windows', 'system32'].join('\\')
+
+type EvidenceChannel = 'driver' | 'backup' | 'control_plane'
+
+/** Planejamento mínimo válido por canal (prefixo e forma do contrato). */
+function evidenceAction(channel: EvidenceChannel, database: string) {
+  if (channel === 'driver') {
+    return {
+      action_id: 'act_create_database_evidence',
+      kind: 'create_database' as const,
+      target_ref: `database:${database}`,
+      risk: 'reversible' as const,
+      reversible: true,
+      dependencies: [],
+    }
+  }
+  if (channel === 'backup') {
+    return {
+      action_id: 'act_configure_backup_evidence',
+      kind: 'configure_backup' as const,
+      target_ref: `backup-policy:projects/${PROJECT_ID}/${ENVIRONMENT}/postgres/`,
+      risk: 'reversible' as const,
+      reversible: true,
+      dependencies: [],
+    }
+  }
+  return {
+    action_id: 'act_publish_registry_evidence',
+    kind: 'publish_registry' as const,
+    target_ref: `registry-record:${PROJECT_ID}`,
+    risk: 'read_only' as const,
+    reversible: true,
+    dependencies: [],
+  }
+}
+
+/**
+ * Roda o produtor real com um adapter que devolve `evidenceRef` em
+ * `evidence_ref` e devolve o `ActionOutcome` observável.
+ */
+async function produceEvidenceRef(
+  channel: EvidenceChannel,
+  evidenceRef: string,
+): Promise<{ readonly status: string; readonly evidence_ref: string | null }> {
+  const leases = createInMemoryLeaseStore({
+    now: () => NOW,
+    generateId: () => '77777777-7777-4777-8777-777777777777',
+  })
+  const lease = leases.acquire({
+    operationId: EVIDENCE_OPERATION_ID,
+    projectId: PROJECT_ID,
+    environment: ENVIRONMENT,
+    holderRef: EVIDENCE_HOLDER,
+  })
+  const naming = buildNamingSnapshot({
+    client_id: 'acme',
+    project_slug: 'site',
+    environment: ENVIRONMENT,
+    driver: 'postgresql_isolated',
+  })
+  const trusted = {
+    status: 'succeeded' as const,
+    safe_detail: 'adapter concluiu',
+    evidence_ref: evidenceRef,
+  }
+  const driver: DriverExecutor = {
+    driver: 'postgresql_isolated',
+    executor_version: 'pcv2-pg-executor-v1',
+    adapter_id: 'canary-evidence-driver',
+    supported_actions: [
+      'create_database',
+      'configure_backup',
+      'publish_registry',
+    ],
+    execute: async () => trusted,
+  }
+  const executor = createActionExecutor({
+    flags: FLAGS_ON,
+    leases,
+    drivers: { postgresql_isolated: driver },
+    controlPlane: {
+      adapter_id: 'canary-evidence-control-plane',
+      publish: async () => trusted,
+    },
+    backups: {
+      adapter_id: 'canary-evidence-backup-channel',
+      configure: async () => trusted,
+    },
+    now: () => NOW,
+  })
+  const context: ActionExecutionContext = {
+    operationId: EVIDENCE_OPERATION_ID,
+    projectId: PROJECT_ID,
+    environment: ENVIRONMENT,
+    driver: 'postgresql_isolated',
+    host_target: 'vps-primary-local',
+    observedRevision: 'rev-1',
+    naming,
+    completedActionIds: [],
+    lease: {
+      leaseId: lease.lease_id,
+      fencingToken: lease.fencing_token,
+      holderRef: EVIDENCE_HOLDER,
+    },
+    endpoint: { host: '127.0.0.1', port: 55432 },
+  }
+  return executor.execute({
+    action: evidenceAction(channel, naming.database),
+    context,
+    observedRevision: 'rev-1',
+  })
+}
+
+describe('canario P3-03 — evidence_ref do produtor real', () => {
+  const channels: ReadonlyArray<EvidenceChannel> = [
+    'driver',
+    'backup',
+    'control_plane',
+  ]
+
+  it('referencia neutra sobrevive intacta (o controle nao e um null cego)', async () => {
+    for (const channel of channels) {
+      const outcome = await produceEvidenceRef(channel, BENIGN_EVIDENCE_REF)
+      expect(outcome.status).toBe('succeeded')
+      expect(outcome.evidence_ref).toBe(BENIGN_EVIDENCE_REF)
+    }
+  })
+
+  it('DSN com credencial e path absoluto nao sao persistidos em evidence_ref', async () => {
+    const rejected: ReadonlyArray<string> = [
+      LIVE_DSN,
+      `postgres://usuario:${LIVE_MATERIAL}@192.0.2.10:5432/lab`,
+      LIVE_PATH,
+      '/etc/passwd',
+      WINDOWS_ABSOLUTE_PATH,
+      `registry-record:../../etc/passwd`,
+      `registry:acme-site/../../root/.ssh/id_rsa`,
+    ]
+    for (const channel of channels) {
+      for (const value of rejected) {
+        const outcome = await produceEvidenceRef(channel, value)
+        expect(outcome.evidence_ref).toBeNull()
+        expectNoLiveValue(outcome.evidence_ref ?? '')
+      }
+    }
+  })
+
+  it('sref_ integral e JWT saem apenas na forma neutralizada', async () => {
+    for (const channel of channels) {
+      const secretRef = await produceEvidenceRef(channel, LIVE_SECRET_REF)
+      expectNoLiveValue(secretRef.evidence_ref ?? '')
+      expect(secretRef.evidence_ref).toContain(SECRET_REF_MASK)
+
+      const jwt = await produceEvidenceRef(channel, LIVE_JWT)
+      expectNoLiveValue(jwt.evidence_ref ?? '')
+      expect(jwt.evidence_ref).toContain(MASK)
+
+      // O valor vivo nunca aparece no detalhe do mesmo outcome.
+      expectNoLiveValue(
+        JSON.stringify({
+          evidence_ref: secretRef.evidence_ref,
+          jwt: jwt.evidence_ref,
+        }),
+      )
+    }
+  })
+
+  it('Teto de 256 caracteres e recusa de forma valem nos tres canais', async () => {
+    const oversized = `registry-record:${'a'.repeat(300)}`
+    for (const channel of channels) {
+      const outcome = await produceEvidenceRef(channel, oversized)
+      expect(outcome.evidence_ref).toBeNull()
+    }
+    // Teto do contrato: exatamente 256 caracteres ainda é aceito.
+    const atLimit = `reg:${'a'.repeat(252)}`
+    expect(atLimit.length).toBe(256)
+    const accepted = await produceEvidenceRef('control_plane', atLimit)
+    expect(accepted.evidence_ref).toBe(atLimit)
   })
 })

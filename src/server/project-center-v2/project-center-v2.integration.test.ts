@@ -824,7 +824,8 @@ describe('harness efemero P3-03 — guard', () => {
     expect(() =>
       assertEphemeralHarness(valid, {
         ...HARNESS_ENV,
-        POSTGRES_DSN: 'postgres://user:pass@109.199.114.111:5432/lab',
+        POSTGRES_DSN:
+          'postgres://user:synthetic-password@198.51.100.7:5432/lab',
       }),
     ).toThrow(HarnessGuardError)
   })
