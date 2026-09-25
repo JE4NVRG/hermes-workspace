@@ -1126,7 +1126,7 @@ export async function handleProjectCenterV2Request(
     )
   }
 
-  // 6. Corpo: leitura incremental com teto, **antes** de qualquer I/O de
+  // 7. Corpo: leitura incremental com teto, **antes** de qualquer I/O de
   //    store (idempotência, observer, limite) e antes de parsear.
   let rawBodyText = ''
   if (request.method === 'POST') {
@@ -1140,7 +1140,7 @@ export async function handleProjectCenterV2Request(
     }
   }
 
-  // 7. Limite por ator+operação nas 7 mutações, com o teto canônico do spec.
+  // 8. Limite por ator+operação nas 7 mutações, com o teto canônico do spec.
   if (route.requiresIdempotencyKey) {
     const maxPerWindow = RATE_LIMIT_MAX_BY_OPERATION[route.operationId]
     if (maxPerWindow === undefined) {
@@ -1169,7 +1169,7 @@ export async function handleProjectCenterV2Request(
     }
   }
 
-  // 7. Cabeçalhos contratuais: If-Match e Idempotency-Key.
+  // 9. Cabeçalhos contratuais: If-Match e Idempotency-Key.
   const ifMatch = request.headers.get(IF_MATCH_HEADER)
   if (route.requiresIfMatch && ifMatch === null) {
     return fail('INVALID_REQUEST', requestId, {
@@ -1195,7 +1195,7 @@ export async function handleProjectCenterV2Request(
     }
   }
 
-  // 9. Corpo já lido sob teto: parse estrito e ausência tratada como `{}`.
+  // 10. Corpo já lido sob teto: parse estrito e ausência tratada como `{}`.
   let rawBody: unknown = null
   if (request.method === 'POST') {
     if (rawBodyText.length > 0) {
