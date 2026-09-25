@@ -37,10 +37,16 @@ const HERE = fileURLToPath(new URL('.', import.meta.url))
 
 /** Fixture de segredo montada em runtime: nenhum literal de token no fonte. */
 const FIXTURE_SECRET_REF = `sref_${'A'.repeat(48)}`
-const FIXTURE_DSN = ['postgres', '://usuario:credencial@host:5432/banco'].join('')
-const FIXTURE_ABSOLUTE_PATH = ['', 'home', 'operador', '.config', 'projeto.env'].join(
-  '/',
+const FIXTURE_DSN = ['postgres', '://usuario:credencial@host:5432/banco'].join(
+  '',
 )
+const FIXTURE_ABSOLUTE_PATH = [
+  '',
+  'home',
+  'operador',
+  '.config',
+  'projeto.env',
+].join('/')
 
 const VALID_INTENT: PublicIntentInput = {
   capabilities: {
@@ -144,7 +150,10 @@ describe('idempotência client-owned', () => {
       .mockImplementationOnce(() => {
         events.push('fetch:2')
         return Promise.resolve(
-          jsonResponse({ operation: operationFixture(), request_id: 'req-1' }, 201),
+          jsonResponse(
+            { operation: operationFixture(), request_id: 'req-1' },
+            201,
+          ),
         )
       })
     const client = createProjectCenterV2Client({
@@ -153,7 +162,9 @@ describe('idempotência client-owned', () => {
       retries: 1,
     })
 
-    const result = await client.dryRun({ intent: VALID_INTENT as ProjectIntent })
+    const result = await client.dryRun({
+      intent: VALID_INTENT as ProjectIntent,
+    })
 
     expect(result.operation.state).toBe('awaiting_approval')
     expect(events[0]).toMatch(/^store:dry-run:/)
@@ -172,12 +183,20 @@ describe('idempotência client-owned', () => {
 
   it('reutiliza a chave em replay da mesma intenção e troca quando a intenção muda', async () => {
     const store = createMemoryIdempotencyStore()
-    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(() =>
-      Promise.resolve(
-        jsonResponse({ operation: operationFixture(), request_id: 'req-1' }, 201),
-      ),
-    )
-    const client = createProjectCenterV2Client({ fetchImpl, idempotency: store })
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse(
+            { operation: operationFixture(), request_id: 'req-1' },
+            201,
+          ),
+        ),
+      )
+    const client = createProjectCenterV2Client({
+      fetchImpl,
+      idempotency: store,
+    })
 
     await client.dryRun({ intent: VALID_INTENT as ProjectIntent })
     await client.dryRun({ intent: VALID_INTENT as ProjectIntent })
@@ -187,7 +206,10 @@ describe('idempotência client-owned', () => {
     expect(sameIntentKeys[1]).toBe(sameIntentKeys[0])
 
     await client.dryRun({
-      intent: { ...(VALID_INTENT as ProjectIntent), display_name: 'Outro Nome' },
+      intent: {
+        ...(VALID_INTENT as ProjectIntent),
+        display_name: 'Outro Nome',
+      },
     })
     const thirdKey = new Headers(
       (fetchImpl.mock.calls[2][1] as RequestInit).headers,
@@ -197,11 +219,16 @@ describe('idempotência client-owned', () => {
   })
 
   it('não envia Authorization nem credencial de nenhuma fonte local', async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(() =>
-      Promise.resolve(
-        jsonResponse({ operation: operationFixture(), request_id: 'req-1' }, 201),
-      ),
-    )
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse(
+            { operation: operationFixture(), request_id: 'req-1' },
+            201,
+          ),
+        ),
+      )
     const client = createProjectCenterV2Client({ fetchImpl })
     await client.dryRun({ intent: VALID_INTENT as ProjectIntent })
 
@@ -227,7 +254,11 @@ describe('entrada pública: sem path, credencial ou SecretRef', () => {
   })
 
   it('rejeita path absoluto, DSN e referência opaca em texto livre', () => {
-    for (const value of [FIXTURE_ABSOLUTE_PATH, FIXTURE_DSN, FIXTURE_SECRET_REF]) {
+    for (const value of [
+      FIXTURE_ABSOLUTE_PATH,
+      FIXTURE_DSN,
+      FIXTURE_SECRET_REF,
+    ]) {
       expect(() =>
         assertPublicIntent({ ...VALID_INTENT, description: value }),
       ).toThrow(ProjectCenterV2InputError)
@@ -235,9 +266,9 @@ describe('entrada pública: sem path, credencial ou SecretRef', () => {
     expect(() =>
       assertFreeText('motivo válido', 'reason', { max: 500, min: 3 }),
     ).not.toThrow()
-    expect(() => assertNoOpaqueReference(FIXTURE_SECRET_REF, 'confirmation')).toThrow(
-      ProjectCenterV2InputError,
-    )
+    expect(() =>
+      assertNoOpaqueReference(FIXTURE_SECRET_REF, 'confirmation'),
+    ).toThrow(ProjectCenterV2InputError)
   })
 
   it('rejeita driver legado como modo selecionável', () => {
@@ -252,7 +283,10 @@ describe('entrada pública: sem path, credencial ou SecretRef', () => {
   })
 
   it('o módulo do cliente não constrói nem parseia SecretRef', () => {
-    const source = readFileSync(resolve(HERE, 'project-center-v2-api.ts'), 'utf8')
+    const source = readFileSync(
+      resolve(HERE, 'project-center-v2-api.ts'),
+      'utf8',
+    )
     expect(source).not.toMatch(/sref_[A-Za-z0-9_-]{8,}/)
     expect(source).not.toMatch(/api[_-]?key|service[_-]?role/i)
   })
@@ -362,11 +396,16 @@ describe('erros tipados e sanitizados', () => {
 
 describe('mutações contratuais', () => {
   it('aprovação envia If-Match entre aspas e payload discriminado', async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(() =>
-      Promise.resolve(
-        jsonResponse({ operation: operationFixture(), request_id: 'req-1' }, 200),
-      ),
-    )
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse(
+            { operation: operationFixture(), request_id: 'req-1' },
+            200,
+          ),
+        ),
+      )
     const client = createProjectCenterV2Client({ fetchImpl })
     await client.approveOperation(
       'op-1',
@@ -389,11 +428,16 @@ describe('mutações contratuais', () => {
   })
 
   it('rejeição nunca envia hash nem frase de aprovação', async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(() =>
-      Promise.resolve(
-        jsonResponse({ operation: operationFixture(), request_id: 'req-1' }, 200),
-      ),
-    )
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse(
+            { operation: operationFixture(), request_id: 'req-1' },
+            200,
+          ),
+        ),
+      )
     const client = createProjectCenterV2Client({ fetchImpl })
     await client.approveOperation(
       'op-1',
@@ -403,27 +447,40 @@ describe('mutações contratuais', () => {
     const body = JSON.parse(
       String((fetchImpl.mock.calls[0][1] as RequestInit).body),
     ) as Record<string, unknown>
-    expect(body).toEqual({ decision: 'reject', reason: 'plano com risco não aceito' })
+    expect(body).toEqual({
+      decision: 'reject',
+      reason: 'plano com risco não aceito',
+    })
     expect(body).not.toHaveProperty('plan_hash')
     expect(body).not.toHaveProperty('confirmation')
   })
 
   it('execução de rollback exige approval_id e hash próprios', async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(() =>
-      Promise.resolve(
-        jsonResponse({ operation: operationFixture(), request_id: 'req-1' }, 202),
-      ),
-    )
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse(
+            { operation: operationFixture(), request_id: 'req-1' },
+            202,
+          ),
+        ),
+      )
     const client = createProjectCenterV2Client({ fetchImpl })
     await client.rollbackExecute(
       'op-1',
-      { approval_id: '11111111-1111-4111-8111-111111111111', rollback_plan_hash: 'c'.repeat(64) },
+      {
+        approval_id: '11111111-1111-4111-8111-111111111111',
+        rollback_plan_hash: 'c'.repeat(64),
+      },
       2,
     )
     expect(String(fetchImpl.mock.calls[0][0])).toContain(
       '/operations/op-1/rollback/execute',
     )
-    expect(JSON.parse(String((fetchImpl.mock.calls[0][1] as RequestInit).body))).toEqual({
+    expect(
+      JSON.parse(String((fetchImpl.mock.calls[0][1] as RequestInit).body)),
+    ).toEqual({
       approval_id: '11111111-1111-4111-8111-111111111111',
       rollback_plan_hash: 'c'.repeat(64),
     })
