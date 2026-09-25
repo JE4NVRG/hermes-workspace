@@ -234,14 +234,37 @@ describe('evaluatePolicy: default deny', () => {
     expect(decision.code).toBe('FORBIDDEN')
   })
 
-  it('nega role fora do ambiente concedido', () => {
+  it('nega role fora do ambiente concedido (ramo exercido com tabela estreitada)', () => {
+    // A tabela canônica espelha o contrato e lista os três ambientes em todas
+    // as roles: com ela o ramo `environment_not_granted` nunca dispara.
     expect(ROLE_DEFINITIONS.project_reader.environments).toEqual([
       'development',
       'staging',
       'production',
     ])
-    const decision = evaluatePolicy(request({ environment: 'production' }))
-    expect(decision.allowed).toBe(true)
+    expect(evaluatePolicy(request({ environment: 'production' })).allowed).toBe(
+      true,
+    )
+
+    // Estreitar a tabela (costura de teste/deployment) torna o ramo
+    // alcançável: nega o ambiente fora da concessão e preserva o concedido.
+    const narrowed = {
+      ...ROLE_DEFINITIONS,
+      project_reader: {
+        ...ROLE_DEFINITIONS.project_reader,
+        environments: ['development'],
+      },
+    }
+    const denied = evaluatePolicy(
+      request({ environment: 'production' }),
+      narrowed,
+    )
+    expect(denied.allowed).toBe(false)
+    expect(denied.reasons).toContain('environment_not_granted')
+    expect(denied.code).toBe('FORBIDDEN')
+    expect(
+      evaluatePolicy(request({ environment: 'development' }), narrowed).allowed,
+    ).toBe(true)
   })
 
   it('nao concede acesso por texto livre na requisicao', () => {

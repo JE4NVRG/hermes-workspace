@@ -230,8 +230,20 @@ const REASON_CODES: Readonly<Record<PolicyReason, PolicyDecisionCode>> =
  *
  * Retorna todas as razões de negação (não fail-fast) para que a camada HTTP do
  * PR 4 possa reportar o motivo sem vazar detalhe sensível.
+ *
+ * `roleDefinitions` é a costura para **estreitar** a tabela (teste ou
+ * deployment que restrinja uma role a menos ambientes). O default é a tabela
+ * canônica do contrato — que lista os três ambientes em todas as roles, de
+ * forma que `environment_not_granted` só é alcançável com uma tabela
+ * injetada; o ramo fica coberto por teste em `policy.test.ts` em vez de virar
+ * código morto silencioso.
  */
-export function evaluatePolicy(request: PolicyRequest): PolicyDecision {
+export function evaluatePolicy(
+  request: PolicyRequest,
+  roleDefinitions: Readonly<
+    Record<ProjectRole, RoleDefinition>
+  > = ROLE_DEFINITIONS,
+): PolicyDecision {
   const reasons: Array<PolicyReason> = []
 
   const subject = request.actor?.subject
@@ -264,7 +276,7 @@ export function evaluatePolicy(request: PolicyRequest): PolicyDecision {
   if (reasons.length > 0 || !isProjectRole(request.role)) return decide(reasons)
 
   const role = request.role
-  const definition = ROLE_DEFINITIONS[role]
+  const definition = roleDefinitions[role]
   const operationId = request.operationId as ProjectOperationId
   const environment = request.environment as string
   const grantedScopes: ReadonlyArray<string> =

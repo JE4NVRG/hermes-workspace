@@ -158,6 +158,13 @@ Resultado esperado: verificações scoped verdes; o reteste deve reportar PCV2-Q
 - Criar: `src/server/project-center-v2/approval-service.ts`
 - Criar testes de rota e serviços no mesmo diretório
 
+> Nota de execução (PR 4): os arquivos de decisão são `$operationId/approve.ts` e
+> `$operationId/rollback/approve.ts`. O TanStack Router deriva a URL do **nome do
+> arquivo**, e o contrato exige `/operations/{operation_id}/approve` e
+> `/operations/{operation_id}/rollback/approve` (confirmado pelo
+> `scripts/project-center-v2-discovery-retest.mjs`), logo `approval.ts` serviria
+> `/approval` e divergiria do contrato canônico.
+
 ### Passos TDD
 
 1. Criar contract tests que comparem método/path/`operationId`, requests e responses das rotas com o OpenAPI.
