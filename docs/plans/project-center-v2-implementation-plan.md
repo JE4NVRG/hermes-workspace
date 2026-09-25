@@ -264,17 +264,18 @@ Resultado esperado: verificações scoped verdes; o reteste deve reportar PCV2-Q
 
 - Criar: `scripts/project-center-v2-contract-check.mjs`
 - Criar: `scripts/project-center-v2-secret-scan.mjs`
-- Criar: `docs/qa/project-center-v2-final-gate.md`
-- Criar: `docs/security/project-center-v2-independent-review.md`
+- Criar: `scripts/project-center-v2-real-harness.mts` (harness efémero das provas reais, opt-in `PROJECT_CENTER_V2_TEST_HARNESS=1`)
 - Criar: `docs/runbooks/project-center-v2-deploy-and-rollback.md`
-- Modificar: `package.json` para scripts scoped `project-center:v2:contract`, `project-center:v2:scan` e `project-center:v2:gate`
+- Modificar (Parte II — gate da implementação) de `docs/qa/project-center-v2-final-gate.md`
+- Criar: `docs/security/project-center-v2-independent-review.md` (card de Security R7SEC)
+- Modificar: `package.json` para scripts scoped `project-center:v2:contract`, `project-center:v2:scan`, `project-center:v2:gate` e `project-center:v2:harness`
 
 ### Passos
 
 1. Validar OpenAPI 3.1, `$ref`, operation IDs, path params, estados/transições, RBAC/scopes, mutações idempotentes e schemas discriminados.
 2. Validar que todos os artefatos referenciados existem e que PRD/ADR/spec/threat/UX projetam o contrato canônico.
 3. Escanear diff e respostas/fixtures/log captures por private keys, PAT, password/DSN, JWT, service key, path absoluto e token `sref_` integral.
-4. Executar testes unitários, contract tests, build e harness efêmero de dois projetos por driver.
+4. Executar testes unitários, contract tests, build e harness efémero de dois projetos por driver (`scripts/project-center-v2-real-harness.mts`; sem opt-in explícito o harness não toca nada e sai com código 2).
 5. Provar replay sem duplicação, falha intermediária reconciliável, lease stale recusado, A sem acesso a B, backup/restore por projeto e rollback com gate próprio.
 6. QA registra comandos, saídas, ambiente, commits e veredito APPROVE/REQUEST_CHANGES em `docs/qa/project-center-v2-final-gate.md`.
 7. Security revisa least privilege, default deny, idempotência, auditoria, blast radius, allowlists, secret broker, gates e redaction em `docs/security/project-center-v2-independent-review.md`.
