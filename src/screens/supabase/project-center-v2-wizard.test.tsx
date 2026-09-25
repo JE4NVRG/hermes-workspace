@@ -341,6 +341,45 @@ describe('ProjectCenterV2Wizard · etapas e acessibilidade', () => {
     expect(cta.className).toContain('min-h-11')
   })
 
+  it('navega por teclado: só elementos nativos focáveis executam ações', async () => {
+    const client = fakeClient()
+    const container = await renderInto(
+      <ProjectCenterV2Wizard client={client} />,
+    )
+
+    // Sem widget custom: nenhuma ação vive em elemento não nativo (o React não
+    // renderiza `onclick`, então o critério é "quem é interativo é focável").
+    const interactive = [
+      ...container.querySelectorAll(
+        '[role="button"], [role="link"], [tabindex]:not([tabindex="-1"])',
+      ),
+    ]
+    expect(interactive).toHaveLength(0)
+
+    // Todo botão do wizard é <button type="button"> e o CTA é alcançável.
+    const buttons = [...container.querySelectorAll('button')]
+    expect(buttons.length).toBeGreaterThanOrEqual(2)
+    expect(buttons.map((button) => button.textContent)).toContain(
+      'Continuar para recursos',
+    )
+    for (const button of buttons) {
+      expect(button.getAttribute('type')).toBe('button')
+      expect(button.getAttribute('aria-disabled')).toBeNull()
+    }
+
+    // O stepper é leitura, não controle: itens são <li> sem tabindex.
+    const stepperItems = [
+      ...(container
+        .querySelector('[data-testid="pcv2-stepper"]')
+        ?.querySelectorAll('ol > li') ?? []),
+    ]
+    expect(stepperItems).toHaveLength(WIZARD_STEPS.length)
+    for (const item of stepperItems) {
+      expect(item.getAttribute('tabindex')).toBeNull()
+      expect(item.querySelector('button, a')).toBeNull()
+    }
+  })
+
   it('respeita prefers-reduced-motion pelo contrato do container', async () => {
     const client = fakeClient()
     const container = await renderInto(
