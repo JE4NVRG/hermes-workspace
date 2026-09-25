@@ -158,3 +158,7 @@ skills-bundle/
 .hermes/
 .env.bak-*
 pr-triage-20260505-*/
+
+# Work dir efemero por execucao do harness do Project Center v2 (o relatorio
+# canonico `qa-artifacts/pcv2-harness/pr7-final-report.json` continua versionado)
+qa-artifacts/pcv2-harness/*/

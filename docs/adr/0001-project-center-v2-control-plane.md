@@ -142,5 +142,7 @@ O gate de compensação não reutiliza a aprovação de provisionamento. Primeir
 - Parecer de gate do Security (pacote de discovery): `docs/security/project-center-v2-independent-review.md`
 - Revisão de discovery do QA (contexto do reteste): `docs/qa/project-center-v2-discovery-review.md`
 - Gate versionado de reteste: `scripts/project-center-v2-discovery-retest.mjs`
+- Gate versionado da implementação: `scripts/project-center-v2-contract-check.mjs`, `scripts/project-center-v2-secret-scan.mjs` e `scripts/project-center-v2-real-harness.mts`
+- Runbook de deploy e rollback: `docs/runbooks/project-center-v2-deploy-and-rollback.md`
 
 Em divergência, o OpenAPI prevalece para enum de estados, transições, RBAC e requisitos por operação; este ADR prevalece para a decisão de arquitetura. Nenhum documento desta lista autoriza ativação de flag, deploy ou mudança em produção.
