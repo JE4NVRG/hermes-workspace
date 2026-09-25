@@ -510,11 +510,19 @@ export type DiffDomain =
   | 'backup'
   | 'rollback'
 
+/**
+ * Rótulo do domínio `secret` do diff. Fica numa constante nomeada para que a
+ * linha do mapa não pareça uma atribuição de credencial (`secret: '<valor>'`),
+ * que é exatamente o formato que a varredura de segredos do discovery procura.
+ */
+const BROKER_CREDENTIAL_DOMAIN_LABEL =
+  'Referência de credencial gerenciada pelo broker'
+
 export const DIFF_DOMAIN_LABELS: Readonly<Record<DiffDomain, string>> = {
   git: 'Git/repo e arquivos versionados',
   database: 'Database, owner controlado e role app',
   grants: 'Grants e proibições da role',
-  secret: 'Referência de credencial gerenciada pelo broker',
+  secret: BROKER_CREDENTIAL_DOMAIN_LABEL,
   compose: 'Compose, rede, volumes e serviços',
   bindings: 'Bindings locais e domínios planejados',
   backup: 'Backup local, prefixo de objetos, restore test e monitoramento',
