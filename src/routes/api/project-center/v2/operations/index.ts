@@ -13,7 +13,8 @@
  * - `createClosedObservationPort()` ⇒ dry-run não observa nada sem adapter;
  * - `createClosedRollbackPlanningPort()` ⇒ rollback recusa (422) sem adapter;
  * - `OPEN_LEASE_GUARD` ⇒ lease exclusivo é do PR 6 (aqui sempre livre);
- * - `InMemoryRateLimitPort` ⇒ 429 determinístico por token/operação.
+ * - `InMemoryRateLimitPort` ⇒ 429 determinístico por token/operação, com o
+ *   teto canônico do spec §10.1 (10/min no dry-run e 5/min nas outras seis).
  *
  * A stack de stores é in-memory de propósito: o PR 4 não abre banco. O
  * adapter durável entra na integração (PR 6/7) implementando as mesmas

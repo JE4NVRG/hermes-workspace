@@ -19,11 +19,17 @@ import {
   IDEMPOTENCY_HEADER,
   IF_MATCH_HEADER,
   InMemoryRateLimitPort,
+  MAX_REQUEST_BODY_BYTES,
   OPEN_LEASE_GUARD,
+  PROJECT_CENTER_V2_MUTATIONS,
   PROJECT_CENTER_V2_OPERATIONS_PATH,
   PROJECT_CENTER_V2_ROUTES,
+  RATE_LIMIT_MAX_BY_OPERATION,
+  buildJsonResponse,
   createDenyAllVerifier,
   handleProjectCenterV2Request,
+  hasUnboundSecretRef,
+  projectCenterV2RouteFor,
 } from './http'
 import {
   createIdempotencyStore,
@@ -150,6 +156,25 @@ const CANONICAL = planProject({
   flags: FLAGS_ON,
 })
 
+/**
+ * Mesma intenção/observação, no ambiente `production`: prova que o gate da
+ * claim `environment` não é simétrico por acidente.
+ */
+const INTENT_PROD: ProjectIntent = { ...INTENT, environment: 'production' }
+const NAMING_PROD = buildNamingSnapshot({
+  client_id: INTENT_PROD.client_id,
+  project_slug: INTENT_PROD.project_slug,
+  environment: INTENT_PROD.environment,
+  driver: INTENT_PROD.driver,
+})
+const OBSERVED_PROD: ObservedState = observedStateSchema.parse({
+  ...OBSERVED,
+  environment: 'production',
+  project_id: NAMING_PROD.project_id,
+  database: { ...OBSERVED.database, name: NAMING_PROD.database },
+  app_role: { ...OBSERVED.app_role, name: NAMING_PROD.app_role },
+})
+
 const OPERATOR = 'user:operador@example.com'
 const APPROVER = 'user:aprovador@example.com'
 const AGENT = 'agent:automacao@example.com'
@@ -160,6 +185,10 @@ const TOKEN_AUDITOR = 'tok-auditor-0000000000000'
 const TOKEN_APPROVER = 'tok-approver-000000000000'
 const TOKEN_AGENT = 'tok-agent-0000000000000'
 const TOKEN_INVALID = 'tok-inexistente-000000000'
+/** Mesmos papéis, com a claim `environment` restrita a `production`. */
+const TOKEN_OPERATOR_PROD = 'tok-operator-prod-000000'
+const TOKEN_APPROVER_PROD = 'tok-approver-prod-000000'
+const TOKEN_AUDITOR_PROD = 'tok-auditor-prod-0000000'
 
 function claims(
   role: keyof typeof ROLE_DEFINITIONS,
@@ -185,6 +214,24 @@ const VERIFIER: ProjectCenterV2TokenVerifier = {
     if (raw === TOKEN_AUDITOR)
       return claims('project_auditor', 'user:auditor@example.com')
     if (raw === TOKEN_APPROVER) return claims('project_approver', APPROVER)
+    if (raw === TOKEN_OPERATOR_PROD) {
+      return claims('project_operator', OPERATOR, {
+        environment: 'production',
+        tokenId: 'token-operator-production',
+      })
+    }
+    if (raw === TOKEN_APPROVER_PROD) {
+      return claims('project_approver', APPROVER, {
+        environment: 'production',
+        tokenId: 'token-approver-production',
+      })
+    }
+    if (raw === TOKEN_AUDITOR_PROD) {
+      return claims('project_auditor', 'user:auditor@example.com', {
+        environment: 'production',
+        tokenId: 'token-auditor-production',
+      })
+    }
     if (raw === TOKEN_AGENT) {
       return claims('project_approver', AGENT, {
         actorType: 'agent',
@@ -316,7 +363,7 @@ function makeHarness(): Harness {
       holder: () => (leaseHolder === null ? null : { holder_ref: leaseHolder }),
     },
     rateLimiter: {
-      allow: (key) => limiter.allow(key),
+      allow: (key, maxPerWindow) => limiter.allow(key, maxPerWindow),
     },
     now: () => new Date(nowMs),
     generateId: () => OPERATION_ID,
@@ -394,6 +441,27 @@ function makeHarness(): Harness {
 
 async function parse(response: Response): Promise<Json> {
   return asJson(await response.json())
+}
+
+/**
+ * `Request` de mutação com corpo em fluxo.
+ *
+ * `duplex: 'half'` é exigido pelo undici para stream body e não existe no
+ * `RequestInit` do lib DOM usada pelo tsconfig — daí o cast restrito.
+ */
+function streamingRequest(
+  url: string,
+  init: {
+    readonly headers: Readonly<Record<string, string>>
+    readonly body: ReadableStream<Uint8Array>
+  },
+): Request {
+  return new Request(url, {
+    method: 'POST',
+    headers: init.headers,
+    body: init.body,
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' })
 }
 
 function dryRunBody(overrides: Partial<ProjectIntent> = {}): Json {
@@ -518,6 +586,138 @@ describe('gates do pipeline', () => {
     expect(errorOf(await parse(response)).code).toBe('INVALID_REQUEST')
   })
 
+  it('recusa corpo acima de 64 KiB pelo Content-Length sem ler nem tocar store', async () => {
+    let rateLimitCalls = 0
+    let chunksPulled = 0
+    harness.setRateLimiter({
+      allow: () => {
+        rateLimitCalls += 1
+        return true
+      },
+    })
+    // Corpo de 2 MiB em fluxo: a sonda do revisor consumia os 2 MiB; aqui o
+    // produtor tem de ficar parado porque a borda nem começa a ler.
+    const stream = new ReadableStream({
+      pull(controller) {
+        chunksPulled += 1
+        controller.enqueue(new Uint8Array(64 * 1024))
+      },
+    })
+    const request = streamingRequest(`http://localhost${DRY_RUN_PATH}`, {
+      headers: {
+        authorization: `Bearer ${TOKEN_OPERATOR}`,
+        'content-type': 'application/json',
+        'content-length': String(2 * 1024 * 1024),
+        [IDEMPOTENCY_HEADER]: KEY,
+      },
+      body: stream,
+    })
+    // O construtor do `Request` pré-busca 1 chunk de forma assíncrona; a
+    // baseline é medida depois desse passo para isolar a leitura do pipeline.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const pulledBefore = chunksPulled
+    const response = await handleProjectCenterV2Request(request, harness.deps)
+
+    expect(response.status).toBe(400)
+    const body = await parse(response)
+    expect(errorOf(body).code).toBe('INVALID_REQUEST')
+    expect(errorOf(body).details).toEqual([
+      { field: 'content-length', reason: 'too_large' },
+    ])
+    // Zero leitura e zero I/O de store: nem limite, nem observer, nem operação.
+    expect(chunksPulled).toBe(pulledBefore)
+    expect(rateLimitCalls).toBe(0)
+    expect(harness.observationCalls).toHaveLength(0)
+    expect(harness.operations.get(OPERATION_ID)).toBeNull()
+    expect(harness.audit.lastSequence(OPERATION_ID)).toBe(0)
+  })
+
+  it('sem Content-Length, corta a leitura no teto e não consome o resto do corpo', async () => {
+    let rateLimitCalls = 0
+    let chunksProduced = 0
+    let bytesProduced = 0
+    const chunk = new Uint8Array(64 * 1024)
+    harness.setRateLimiter({
+      allow: () => {
+        rateLimitCalls += 1
+        return true
+      },
+    })
+    // 32 chunks = 2 MiB disponíveis; `highWaterMark: 0` garante que o contador
+    // reflita exatamente o que a borda leu.
+    const stream = new ReadableStream(
+      {
+        pull(controller) {
+          chunksProduced += 1
+          bytesProduced += chunk.byteLength
+          if (chunksProduced >= 32) {
+            controller.close()
+            return
+          }
+          controller.enqueue(chunk)
+        },
+      },
+      { highWaterMark: 0 },
+    )
+    const response = await handleProjectCenterV2Request(
+      streamingRequest(`http://localhost${DRY_RUN_PATH}`, {
+        headers: {
+          authorization: `Bearer ${TOKEN_OPERATOR}`,
+          'content-type': 'application/json',
+          [IDEMPOTENCY_HEADER]: KEY,
+        },
+        body: stream,
+      }),
+      harness.deps,
+    )
+
+    expect(response.status).toBe(400)
+    const body = await parse(response)
+    expect(errorOf(body).code).toBe('INVALID_REQUEST')
+    expect(errorOf(body).details).toEqual([
+      { field: 'body', reason: 'too_large' },
+    ])
+    // No máximo um chunk além do teto é produzido: os 2 MiB não são drenados.
+    expect(bytesProduced).toBeLessThanOrEqual(
+      MAX_REQUEST_BODY_BYTES + chunk.byteLength,
+    )
+    expect(chunksProduced).toBeLessThan(32)
+    expect(rateLimitCalls).toBe(0)
+    expect(harness.observationCalls).toHaveLength(0)
+    expect(harness.operations.get(OPERATION_ID)).toBeNull()
+    expect(harness.audit.lastSequence(OPERATION_ID)).toBe(0)
+  })
+
+  it('aceita corpo exatamente no teto e segue o pipeline normal', async () => {
+    const base = JSON.stringify({ ...dryRunBody(), reason: '' })
+    const padding = 'a'.repeat(MAX_REQUEST_BODY_BYTES - base.length)
+    const text = JSON.stringify({ ...dryRunBody(), reason: padding })
+    expect(text.length).toBe(MAX_REQUEST_BODY_BYTES)
+
+    const response = await handleProjectCenterV2Request(
+      new Request(`http://localhost${DRY_RUN_PATH}`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${TOKEN_OPERATOR}`,
+          'content-type': 'application/json',
+          'content-length': String(MAX_REQUEST_BODY_BYTES),
+          [IDEMPOTENCY_HEADER]: KEY,
+        },
+        body: text,
+      }),
+      harness.deps,
+    )
+    // O teto é inclusivo: 64 KiB passam pelo gate de tamanho e param na
+    // validação de schema (`reason` acima do contrato), nunca em `too_large`.
+    expect(response.status).toBe(400)
+    const body = await parse(response)
+    expect(errorOf(body).code).toBe('INVALID_REQUEST')
+    const details = errorOf(body).details as ReadonlyArray<Json>
+    expect(details[0]?.field).toBe('reason')
+    expect(JSON.stringify(details)).not.toContain('too_large')
+    expect(harness.observationCalls).toHaveLength(0)
+  })
+
   it('recusa corpo inválido com detalhe fechado', async () => {
     const missing = await harness.send({
       method: 'POST',
@@ -612,6 +812,101 @@ describe('gates do pipeline', () => {
     expect(errorOf(body).code).toBe('RATE_LIMITED')
     expect(errorOf(body).retryable).toBe(true)
     expect(errorOf(body).retry_after_seconds).toBe(60)
+  })
+
+  it('aplica o teto canônico por operação (spec §10.1) nas sete mutações', async () => {
+    // Tabela do spec §10.1: `createProjectDryRun` 10/min e as outras seis 5/min.
+    const specCaps: Readonly<Record<string, number>> = Object.freeze({
+      createProjectDryRun: 10,
+      decideProjectOperationApproval: 5,
+      executeProjectOperation: 5,
+      verifyProjectOperation: 5,
+      createProjectRollbackDryRun: 5,
+      decideProjectRollbackApproval: 5,
+      executeProjectRollback: 5,
+    })
+    const tokens: Readonly<Record<string, string>> = Object.freeze({
+      createProjectDryRun: TOKEN_OPERATOR,
+      decideProjectOperationApproval: TOKEN_APPROVER,
+      executeProjectOperation: TOKEN_OPERATOR,
+      verifyProjectOperation: TOKEN_OPERATOR,
+      createProjectRollbackDryRun: TOKEN_OPERATOR,
+      decideProjectRollbackApproval: TOKEN_APPROVER,
+      executeProjectRollback: TOKEN_OPERATOR,
+    })
+
+    // Manifest e tabela canônica andam juntos: nenhuma mutação sem teto.
+    expect(
+      PROJECT_CENTER_V2_MUTATIONS.map(
+        (mutation) => mutation.operationId,
+      ).sort(),
+    ).toEqual(Object.keys(specCaps).sort())
+    for (const mutation of PROJECT_CENTER_V2_MUTATIONS) {
+      expect(
+        RATE_LIMIT_MAX_BY_OPERATION[mutation.operationId],
+        mutation.operationId,
+      ).toBe(specCaps[mutation.operationId])
+    }
+
+    harness.setRateLimiter(new InMemoryRateLimitPort())
+    for (const [operationId, cap] of Object.entries(specCaps)) {
+      const route = projectCenterV2RouteFor(operationId)
+      const path = route.path.replace('{operation_id}', OPERATION_ID)
+      const ifMatch = route.requiresIfMatch ? '"1"' : null
+      for (let attempt = 1; attempt <= cap; attempt += 1) {
+        const allowed = await harness.send({
+          method: 'POST',
+          path,
+          token: tokens[operationId],
+          key: `idem-${operationId}-${attempt}-permitido`,
+          ifMatch,
+          body: {},
+        })
+        expect(allowed.status, `${operationId}#${attempt}`).not.toBe(429)
+      }
+      const limited = await harness.send({
+        method: 'POST',
+        path,
+        token: tokens[operationId],
+        key: `idem-${operationId}-overflow-bloqueado`,
+        ifMatch,
+        body: {},
+      })
+      expect(limited.status, `${operationId}#${cap + 1}`).toBe(429)
+      expect(limited.headers.get('Retry-After'), operationId).toBe('60')
+      const body = await parse(limited)
+      expect(errorOf(body).code).toBe('RATE_LIMITED')
+      expect(errorOf(body).retryable).toBe(true)
+      expect(errorOf(body).retry_after_seconds).toBe(60)
+    }
+
+    // Nenhuma mutação real entrou: sem operação, sem auditoria, sem observer.
+    expect(harness.operations.get(OPERATION_ID)).toBeNull()
+    expect(harness.audit.lastSequence(OPERATION_ID)).toBe(0)
+    expect(harness.observationCalls).toHaveLength(0)
+  })
+
+  it('trata o teto do port injetado como piso de aperto, nunca acima do contrato', async () => {
+    harness.setRateLimiter(new InMemoryRateLimitPort(3, 60))
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const allowed = await harness.send({
+        method: 'POST',
+        path: DRY_RUN_PATH,
+        token: TOKEN_OPERATOR,
+        key: `idem-aperto-${attempt}-0000000000`,
+        body: {},
+      })
+      expect(allowed.status, `aperto#${attempt}`).not.toBe(429)
+    }
+    const limited = await harness.send({
+      method: 'POST',
+      path: DRY_RUN_PATH,
+      token: TOKEN_OPERATOR,
+      key: 'idem-aperto-4-0000000000',
+      body: {},
+    })
+    expect(limited.status).toBe(429)
+    expect(limited.headers.get('Retry-After')).toBe('60')
   })
 
   it('exige Idempotency-Key e If-Match com formato contratual', async () => {
@@ -1606,6 +1901,58 @@ describe('auditoria e sanitização', () => {
     expect(raw).toContain('INTERNAL_ERROR')
   })
 
+  it('só libera SecretRef no caminho exato operation.artifacts[n].ref', async () => {
+    const token = `sref_${'A'.repeat(43)}`
+    // Caminho contratual (o único tipado como `ArtifactRef`): liberado.
+    expect(
+      hasUnboundSecretRef({
+        operation: { artifacts: [{ ref: token, type: 'secret_ref' }] },
+      }),
+    ).toBe(false)
+    // Fora dele — inclusive em `plan.x.artifacts[0].ref`, que o allowlist
+    // antigo (`path.slice(-3)`) deixava passar — o valor é texto livre.
+    expect(
+      hasUnboundSecretRef({ plan: { x: { artifacts: [{ ref: token }] } } }),
+    ).toBe(true)
+    expect(hasUnboundSecretRef({ artifacts: [{ ref: token }] })).toBe(true)
+    expect(
+      hasUnboundSecretRef({
+        operation: { plan: { artifacts: [{ ref: token }] } },
+      }),
+    ).toBe(true)
+    expect(
+      hasUnboundSecretRef({ operation: { artifacts: [{ refs: token }] } }),
+    ).toBe(true)
+    expect(
+      hasUnboundSecretRef({
+        operation: { artifacts: [{ ref: { x: token } }] },
+      }),
+    ).toBe(true)
+
+    // A borda responde 500 fechado em vez de vazar o token.
+    const leaked = buildJsonResponse(
+      {
+        request_id: 'req_12345678',
+        operation: { plan: { x: { artifacts: [{ ref: token }] } } },
+      },
+      { status: 200 },
+    )
+    expect(leaked.status).toBe(500)
+    const raw = JSON.stringify(await leaked.json())
+    expect(raw).not.toContain(token)
+    expect(raw).toContain('INTERNAL_ERROR')
+
+    const allowed = buildJsonResponse(
+      {
+        request_id: 'req_12345678',
+        operation: { artifacts: [{ ref: token, type: 'secret_ref' }] },
+      },
+      { status: 200 },
+    )
+    expect(allowed.status).toBe(200)
+    expect(JSON.stringify(await allowed.json())).toContain(token)
+  })
+
   it('não expõe o token do agente nem o subject cru nas respostas', async () => {
     const response = await harness.send({
       method: 'GET',
@@ -1616,6 +1963,162 @@ describe('auditoria e sanitização', () => {
     const raw = JSON.stringify(await parse(response))
     expect(raw).not.toContain(TOKEN_OPERATOR)
     expect(raw).not.toContain(OPERATOR)
+  })
+})
+
+describe('escopo de ambiente da claim', () => {
+  /**
+   * Operações que atuam sobre uma operação existente (achado F3 da
+   * cross-review): a claim `environment` do token tem de bater com o ambiente
+   * alvo, sem side effect. A leitura pura (`getProjectOperation`) fica fora do
+   * escopo do card.
+   */
+  const SCOPED_OPERATIONS: ReadonlyArray<{
+    readonly operationId: string
+    readonly method: 'GET' | 'POST'
+    readonly devToken: string
+    readonly prodToken: string
+  }> = Object.freeze([
+    {
+      operationId: 'decideProjectOperationApproval',
+      method: 'POST',
+      devToken: TOKEN_APPROVER,
+      prodToken: TOKEN_APPROVER_PROD,
+    },
+    {
+      operationId: 'executeProjectOperation',
+      method: 'POST',
+      devToken: TOKEN_OPERATOR,
+      prodToken: TOKEN_OPERATOR_PROD,
+    },
+    {
+      operationId: 'verifyProjectOperation',
+      method: 'POST',
+      devToken: TOKEN_OPERATOR,
+      prodToken: TOKEN_OPERATOR_PROD,
+    },
+    {
+      operationId: 'createProjectRollbackDryRun',
+      method: 'POST',
+      devToken: TOKEN_OPERATOR,
+      prodToken: TOKEN_OPERATOR_PROD,
+    },
+    {
+      operationId: 'decideProjectRollbackApproval',
+      method: 'POST',
+      devToken: TOKEN_APPROVER,
+      prodToken: TOKEN_APPROVER_PROD,
+    },
+    {
+      operationId: 'executeProjectRollback',
+      method: 'POST',
+      devToken: TOKEN_OPERATOR,
+      prodToken: TOKEN_OPERATOR_PROD,
+    },
+    {
+      operationId: 'listProjectOperationAudit',
+      method: 'GET',
+      devToken: TOKEN_AUDITOR,
+      prodToken: TOKEN_AUDITOR_PROD,
+    },
+  ])
+
+  function pathFor(operationId: string): string {
+    return projectCenterV2RouteFor(operationId).path.replace(
+      '{operation_id}',
+      OPERATION_ID,
+    )
+  }
+
+  function act(
+    harness: Harness,
+    entry: (typeof SCOPED_OPERATIONS)[number],
+    token: string,
+    key: string,
+  ): Promise<Response> {
+    return harness.send({
+      method: entry.method,
+      path: pathFor(entry.operationId),
+      token,
+      ...(entry.method === 'POST' ? { key, ifMatch: '"1"', body: {} } : {}),
+    })
+  }
+
+  it('recusa token de outro ambiente em approve/execute/verify/rollback/audit', async () => {
+    const harness = makeHarness()
+    await createOperation(harness)
+    const auditBefore = harness.audit.lastSequence(OPERATION_ID)
+    const observationsBefore = harness.observationCalls.length
+
+    for (const entry of SCOPED_OPERATIONS) {
+      // Controle: o token do ambiente da operação chega ao handler (nunca 403).
+      const control = await act(
+        harness,
+        entry,
+        entry.devToken,
+        `idem-ctrl-${entry.operationId}-0000`,
+      )
+      expect(control.status, `${entry.operationId} controle`).not.toBe(403)
+
+      // Token restrito a `production` sobre operação `development`.
+      const denied = await act(
+        harness,
+        entry,
+        entry.prodToken,
+        `idem-deny-${entry.operationId}-0000`,
+      )
+      expect(denied.status, entry.operationId).toBe(403)
+      const body = await parse(denied)
+      expect(errorOf(body).code).toBe('FORBIDDEN')
+    }
+
+    // Zero side effect: estado, auditoria e observer intactos.
+    expect(harness.operations.get(OPERATION_ID)?.state).toBe(
+      'awaiting_approval',
+    )
+    expect(harness.audit.lastSequence(OPERATION_ID)).toBe(auditBefore)
+    expect(harness.observationCalls).toHaveLength(observationsBefore)
+  })
+
+  it('recusa token de development sobre operação de production (sentido inverso)', async () => {
+    const harness = makeHarness()
+    harness.setObserved(OBSERVED_PROD)
+    const created = await harness.send({
+      method: 'POST',
+      path: DRY_RUN_PATH,
+      token: TOKEN_OPERATOR_PROD,
+      key: KEY,
+      body: dryRunBody({ environment: 'production' }),
+    })
+    expect(created.status).toBe(201)
+    expect(operationOf(await parse(created)).environment).toBe('production')
+    const auditBefore = harness.audit.lastSequence(OPERATION_ID)
+    const observationsBefore = harness.observationCalls.length
+
+    for (const entry of SCOPED_OPERATIONS) {
+      const control = await act(
+        harness,
+        entry,
+        entry.prodToken,
+        `idem-prod-ctrl-${entry.operationId}-00`,
+      )
+      expect(control.status, `${entry.operationId} controle`).not.toBe(403)
+
+      const denied = await act(
+        harness,
+        entry,
+        entry.devToken,
+        `idem-prod-deny-${entry.operationId}-00`,
+      )
+      expect(denied.status, entry.operationId).toBe(403)
+      expect(errorOf(await parse(denied)).code).toBe('FORBIDDEN')
+    }
+
+    expect(harness.operations.get(OPERATION_ID)?.state).toBe(
+      'awaiting_approval',
+    )
+    expect(harness.audit.lastSequence(OPERATION_ID)).toBe(auditBefore)
+    expect(harness.observationCalls).toHaveLength(observationsBefore)
   })
 })
 

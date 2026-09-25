@@ -7,17 +7,24 @@
  *    rota v2 abre store, observer ou executor (`feature_disabled`, 403);
  * 2. roteamento pelo manifest (método + caminho contratual);
  * 3. `Content-Type: application/json` em toda mutação;
- * 4. bearer token com as claims canônicas (`sub`, `actor_type`) — 401 sem
+ * 4. **teto de corpo** (64 KiB, spec §10): `Content-Length` acima do teto é
+ *    recusado antes de ler; sem `Content-Length`, a leitura é incremental e
+ *    para no teto — nos dois casos antes de qualquer I/O de store;
+ * 5. bearer token com as claims canônicas (`sub`, `actor_type`) — 401 sem
  *    identidade válida;
- * 5. **segregação de ator**: operação de decisão exige `actor_type = human`
+ * 6. **segregação de ator**: operação de decisão exige `actor_type = human`
  *    (403 `FORBIDDEN`, zero side effect) antes de qualquer leitura de estado;
- * 6. policy engine do PR 1 (default deny): role/scope/ambiente por
+ * 7. policy engine do PR 1 (default deny): role/scope/ambiente por
  *    `operationId`;
- * 7. `Idempotency-Key` obrigatória nas 7 mutações + limite por ator (429 com
- *    `Retry-After`);
- * 8. `If-Match` obrigatório nas operações sobre uma operação existente;
- * 9. corpo validado por schema estrito (`additionalProperties: false`);
- * 10. escrita atômica (operação + auditoria + outbox + aprovação) pela unidade
+ * 8. leitura do corpo com teto, **antes** de idempotência, observer e limite;
+ * 9. `Idempotency-Key` obrigatória nas 7 mutações + limite por ator com o
+ *    teto canônico por `operationId` (10/min no dry-run e 5/min nas outras
+ *    seis, spec §10.1) → 429 com `Retry-After` em segundos;
+ * 10. `If-Match` obrigatório nas operações sobre uma operação existente;
+ * 11. corpo validado por schema estrito (`additionalProperties: false`);
+ * 12. toda operação sobre uma operação existente confere a claim
+ *    `environment` do token contra o ambiente alvo (403 sem side effect);
+ * 13. escrita atômica (operação + auditoria + outbox + aprovação) pela unidade
  *    de trabalho do `idempotency.ts`; `execute`/`verify`/`rollback execute`
  *    apenas **enfileiram** — nenhum executor existe no PR 4.
  *
@@ -116,9 +123,24 @@ export const IDEMPOTENCY_HEADER = 'Idempotency-Key'
 export const IF_MATCH_HEADER = 'If-Match'
 /** Cabeçalho de correlação. */
 export const REQUEST_ID_HEADER = 'X-Request-Id'
-/** Janela e teto do limite por ator+operação (contrato: 429 + Retry-After). */
+/**
+ * Teto global do limite por ator (default do port in-memory).
+ *
+ * O teto efetivo de uma mutação é o **menor** entre este valor e o teto
+ * canônico da operação (`RATE_LIMIT_MAX_BY_OPERATION`, spec §10.1): um port
+ * injetado nunca afrouxa o contrato, só aperta.
+ */
 export const RATE_LIMIT_MAX_REQUESTS = 30
+/** Janela do limite por ator, em segundos (o `Retry-After` sai nesta unidade). */
 export const RATE_LIMIT_WINDOW_SECONDS = 60
+/** Teto de `createProjectDryRun`: `dry-runs por ator` = 10/min (spec §10.1). */
+export const RATE_LIMIT_MAX_DRY_RUN = 10
+/** Teto das outras seis mutações: `mutações por ator` = 5/min (spec §10.1). */
+export const RATE_LIMIT_MAX_MUTATION = 5
+/** Teto de corpo HTTP: `body HTTP` = 64 KiB (spec §10). */
+export const MAX_REQUEST_BODY_BYTES = 64 * 1024
+/** Cabeçalho de tamanho declarado do corpo. */
+export const CONTENT_LENGTH_HEADER = 'content-length'
 /** Teto de itens por página de auditoria (contrato). */
 export const AUDIT_MAX_LIMIT = 500
 /** Corpo literal quando a superfície está desligada (plano, deploy passo 2). */
@@ -334,6 +356,25 @@ export const PROJECT_CENTER_V2_MUTATIONS: ReadonlyArray<OperationRouteDefinition
     PROJECT_CENTER_V2_ROUTES.filter((candidate) => candidate.method === 'POST'),
   )
 
+/**
+ * Teto canônico por ator+minuto das sete mutações (spec §10.1).
+ *
+ * Fonte única do limite de borda: `createProjectDryRun` 10/min e as outras
+ * seis 5/min. Mutação sem entrada aqui é furo de configuração e a borda falha
+ * fechado (500) em vez de liberar tráfego sem limite.
+ */
+export const RATE_LIMIT_MAX_BY_OPERATION: Readonly<
+  Partial<Record<string, number>>
+> = Object.freeze({
+  createProjectDryRun: RATE_LIMIT_MAX_DRY_RUN,
+  decideProjectOperationApproval: RATE_LIMIT_MAX_MUTATION,
+  executeProjectOperation: RATE_LIMIT_MAX_MUTATION,
+  verifyProjectOperation: RATE_LIMIT_MAX_MUTATION,
+  createProjectRollbackDryRun: RATE_LIMIT_MAX_MUTATION,
+  decideProjectRollbackApproval: RATE_LIMIT_MAX_MUTATION,
+  executeProjectRollback: RATE_LIMIT_MAX_MUTATION,
+})
+
 function segmentsOf(path: string): ReadonlyArray<string> {
   return path.split('/').filter((segment) => segment.length > 0)
 }
@@ -397,8 +438,14 @@ export interface ProjectCenterV2TokenVerifier {
 }
 
 export interface RateLimitPort {
-  /** `true` quando a requisição é permitida. */
-  allow: (key: string) => boolean
+  /**
+   * `true` quando a requisição é permitida.
+   *
+   * `maxPerWindow` é o teto canônico da operação (spec §10.1); o port aplica no
+   * máximo esse teto — nunca mais — e pode ser configurado com um teto global
+   * menor (ver `InMemoryRateLimitPort`).
+   */
+  allow: (key: string, maxPerWindow: number) => boolean
 }
 
 export interface LeaseGuard {
@@ -477,13 +524,15 @@ export class InMemoryRateLimitPort implements RateLimitPort {
     private readonly windowSeconds = RATE_LIMIT_WINDOW_SECONDS,
   ) {}
 
-  allow(key: string): boolean {
+  allow(key: string, maxPerWindow: number): boolean {
     const now = Date.now()
     const windowMs = this.windowSeconds * 1000
+    // O teto configurado é um piso de aperto: nunca acima do teto canônico.
+    const limit = Math.min(this.max, maxPerWindow)
     const current = (this.hits.get(key) ?? []).filter(
       (timestamp) => now - timestamp < windowMs,
     )
-    if (current.length >= this.max) {
+    if (current.length >= limit) {
       this.hits.set(key, current)
       return false
     }
@@ -573,6 +622,27 @@ export class InvalidRequestBodyError extends Error {
     super('corpo da requisicao invalido')
     this.name = 'InvalidRequestBodyError'
     this.details = details
+  }
+}
+
+/**
+ * Corpo acima do teto do contrato (`body HTTP` 64 KiB, spec §10).
+ *
+ * O contrato declara `400` (nunca `413`) para corpo grande demais. O campo do
+ * detalhe é `content-length` quando o tamanho foi declarado e `body` quando só
+ * a leitura incremental revelou o excesso.
+ */
+export class RequestBodyTooLargeError extends Error {
+  readonly code: ErrorCode = 'INVALID_REQUEST'
+  readonly status = 400
+  readonly details: ReadonlyArray<ErrorDetail>
+  readonly field: string
+
+  constructor(field: string) {
+    super('corpo da requisicao acima do teto')
+    this.name = 'RequestBodyTooLargeError'
+    this.field = field
+    this.details = [{ field, reason: 'too_large' }]
   }
 }
 
@@ -725,9 +795,24 @@ export function hasUnboundSecretRef(value: unknown): boolean {
   return scanForUnboundSecretRef(value, [])
 }
 
+/**
+ * Sequência exata (raiz + coleção + índice + folha) do único caminho que o
+ * contrato tipa como `ArtifactRef` com `type: secret_ref`.
+ *
+ * Comparar o caminho inteiro — e não apenas os três últimos segmentos — é o
+ * que impede que um `sref_` escondido em `plan.x.artifacts[0].ref`, em
+ * qualquer profundidade, atravesse a borda: fora desta raiz o valor é texto
+ * livre e falha fechado (500 `INTERNAL_ERROR`).
+ */
 function isAllowedSecretRefPath(path: ReadonlyArray<string | number>): boolean {
-  const [field, index, leaf] = path.slice(-3)
-  return field === 'artifacts' && typeof index === 'number' && leaf === 'ref'
+  if (path.length !== 4) return false
+  const [root, collection, index, leaf] = path
+  return (
+    root === 'operation' &&
+    collection === 'artifacts' &&
+    typeof index === 'number' &&
+    leaf === 'ref'
+  )
 }
 
 function scanForUnboundSecretRef(
@@ -870,6 +955,56 @@ function bearerToken(request: Request): string | null {
   return match === null ? null : match[1]
 }
 
+/** `Content-Length` declarado, ou `null` quando ausente/inválido. */
+function declaredContentLength(request: Request): number | null {
+  const raw = request.headers.get(CONTENT_LENGTH_HEADER)
+  if (raw === null) return null
+  const parsed = Number(raw.trim())
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+/** `400 INVALID_REQUEST` fechado para corpo acima do teto do contrato. */
+function bodyTooLargeResponse(requestId: string, field: string): Response {
+  return fail('INVALID_REQUEST', requestId, {
+    internalReason: 'body_too_large',
+    details: [{ field, reason: 'too_large' }],
+  })
+}
+
+/**
+ * Lê o corpo em fluxo e aborta no teto do contrato (spec §10: 64 KiB).
+ *
+ * Sem `Content-Length` confiável o teto é aplicado **durante** a leitura: o
+ * primeiro chunk que ultrapassa o teto encerra o stream (produtor cancelado),
+ * então o resto do corpo nunca é consumido e o JSON nunca é parseado.
+ */
+async function readBodyTextWithinLimit(request: Request): Promise<string> {
+  const declared = declaredContentLength(request)
+  if (declared !== null && declared > MAX_REQUEST_BODY_BYTES) {
+    throw new RequestBodyTooLargeError(CONTENT_LENGTH_HEADER)
+  }
+  const body = request.body
+  if (body === null) return ''
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let text = ''
+  let totalBytes = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      totalBytes += value.byteLength
+      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+        throw new RequestBodyTooLargeError('body')
+      }
+      text += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+  return text + decoder.decode()
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     value,
@@ -934,7 +1069,15 @@ export async function handleProjectCenterV2Request(
     }
   }
 
-  // 3. Autenticação: bearer token verificável com claims canônicas.
+  // 3. Teto de corpo declarado (64 KiB): recusa sem ler um único byte.
+  if (request.method === 'POST') {
+    const declared = declaredContentLength(request)
+    if (declared !== null && declared > MAX_REQUEST_BODY_BYTES) {
+      return bodyTooLargeResponse(requestId, CONTENT_LENGTH_HEADER)
+    }
+  }
+
+  // 4. Autenticação: bearer token verificável com claims canônicas.
   const rawToken = bearerToken(request)
   const claims = rawToken === null ? null : deps.verifier.verify(rawToken)
   if (claims === null) {
@@ -953,7 +1096,7 @@ export async function handleProjectCenterV2Request(
     })
   }
 
-  // 4. Segregação de ator: decisão é ato humano. Antes de qualquer estado.
+  // 5. Segregação de ator: decisão é ato humano. Antes de qualquer estado.
   if (route.segregation !== null && claims.actorType !== 'human') {
     return fail('FORBIDDEN', requestId, {
       internalReason: `non_human_actor:${route.operationId}`,
@@ -961,7 +1104,7 @@ export async function handleProjectCenterV2Request(
     })
   }
 
-  // 5. Policy engine (default deny) por operationId + scopes + ambiente.
+  // 6. Policy engine (default deny) por operationId + scopes + ambiente.
   const policyDecision = evaluatePolicy({
     operationId: route.operationId,
     actor: policyActor(claims),
@@ -983,10 +1126,32 @@ export async function handleProjectCenterV2Request(
     )
   }
 
-  // 6. Limite por ator+operação nas 7 mutações.
+  // 6. Corpo: leitura incremental com teto, **antes** de qualquer I/O de
+  //    store (idempotência, observer, limite) e antes de parsear.
+  let rawBodyText = ''
+  if (request.method === 'POST') {
+    try {
+      rawBodyText = await readBodyTextWithinLimit(request)
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return bodyTooLargeResponse(requestId, error.field)
+      }
+      throw error
+    }
+  }
+
+  // 7. Limite por ator+operação nas 7 mutações, com o teto canônico do spec.
   if (route.requiresIdempotencyKey) {
+    const maxPerWindow = RATE_LIMIT_MAX_BY_OPERATION[route.operationId]
+    if (maxPerWindow === undefined) {
+      // Mutação sem teto declarado é furo de configuração: falha fechado.
+      return fail('INTERNAL_ERROR', requestId, {
+        internalReason: `rate_limit_missing:${route.operationId}`,
+      })
+    }
     const allowed = deps.rateLimiter.allow(
       `pcv2:${claims.tokenId}:${route.operationId}`,
+      maxPerWindow,
     )
     if (!allowed) {
       return fail('RATE_LIMITED', requestId, {
@@ -1030,13 +1195,12 @@ export async function handleProjectCenterV2Request(
     }
   }
 
-  // 8. Corpo (mutação) e parâmetro de rota.
+  // 9. Corpo já lido sob teto: parse estrito e ausência tratada como `{}`.
   let rawBody: unknown = null
   if (request.method === 'POST') {
-    const text = await request.text()
-    if (text.length > 0) {
+    if (rawBodyText.length > 0) {
       try {
-        rawBody = JSON.parse(text) as unknown
+        rawBody = JSON.parse(rawBodyText) as unknown
       } catch {
         return fail('INVALID_REQUEST', requestId, {
           internalReason: 'invalid_json',
@@ -1292,6 +1456,17 @@ function assertLockFree(context: PipelineContext, operationId: string): void {
   }
 }
 
+/**
+ * Claim `environment` do token precisa bater com o ambiente alvo.
+ *
+ * Vale para o dry-run (que cria a operação) e para **toda** operação que atua
+ * sobre uma operação existente — approve/execute/verify/rollback/audit: um
+ * token restrito a `development` nunca decide nem dispara `production`.
+ *
+ * A checagem roda antes de idempotência, observer, lease e qualquer escrita:
+ * divergência é `403 FORBIDDEN` (`http.ts:388-389` — "ambiente ao qual o token
+ * está restrito") sem side effect nenhum.
+ */
 function assertEnvironmentMatch(
   claims: ProjectCenterV2TokenClaims,
   environment: string,
@@ -1446,6 +1621,7 @@ async function decideProjectOperationApproval(
   ifMatch: string | null,
 ): Promise<Response> {
   const operation = requireOperation(context, true)
+  assertEnvironmentMatch(context.claims, operation.environment)
   const revision = revisionFrom(ifMatch)
   const body = validateBody(
     context.route.operationId,
@@ -1557,6 +1733,7 @@ async function executeProjectOperation(
   ifMatch: string | null,
 ): Promise<Response> {
   const operation = requireOperation(context, true)
+  assertEnvironmentMatch(context.claims, operation.environment)
   const revision = revisionFrom(ifMatch)
   const body = validateBody(
     context.route.operationId,
@@ -1645,6 +1822,7 @@ async function verifyProjectOperation(
   ifMatch: string | null,
 ): Promise<Response> {
   const operation = requireOperation(context, true)
+  assertEnvironmentMatch(context.claims, operation.environment)
   const revision = revisionFrom(ifMatch)
   const body = validateBody(
     context.route.operationId,
@@ -1705,6 +1883,7 @@ async function createProjectRollbackDryRun(
   ifMatch: string | null,
 ): Promise<Response> {
   const operation = requireOperation(context, true)
+  assertEnvironmentMatch(context.claims, operation.environment)
   const revision = revisionFrom(ifMatch)
   const body = validateBody(
     context.route.operationId,
@@ -1797,6 +1976,7 @@ async function decideProjectRollbackApproval(
 ): Promise<Response> {
   const operation = requireOperation(context, false)
   const projected = context.projection(operation.operation_id) ?? operation
+  assertEnvironmentMatch(context.claims, operation.environment)
   const revision = revisionFrom(ifMatch)
   const body = validateBody(
     context.route.operationId,
@@ -1868,6 +2048,7 @@ async function executeProjectRollback(
   ifMatch: string | null,
 ): Promise<Response> {
   const operation = requireOperation(context, true)
+  assertEnvironmentMatch(context.claims, operation.environment)
   const revision = revisionFrom(ifMatch)
   const body = validateBody(
     context.route.operationId,
@@ -1959,6 +2140,7 @@ async function listProjectOperationAudit(
   request: Request,
 ): Promise<Response> {
   const operation = requireOperation(context, false)
+  assertEnvironmentMatch(context.claims, operation.environment)
   const url = new URL(request.url)
   const cursorParam = url.searchParams.get('cursor')
   const limitParam = url.searchParams.get('limit')
