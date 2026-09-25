@@ -10,11 +10,21 @@ import {
   Shield01Icon,
 } from '@hugeicons/core-free-icons'
 import { useMemo, useState } from 'react'
+import {
+  PCV2_CARD,
+  PCV2_HEADING,
+  PCV2_MUTED,
+  PCV2_PRIMARY_BUTTON,
+  PCV2_SECONDARY_BUTTON,
+  ProjectCenterV2Gate,
+} from './project-center-v2-gate'
+import { ProjectCenterV2Wizard } from './project-center-v2-wizard'
 import type {
   SupabaseRegistryProject,
   SupabaseRegistryRisk,
   SupabaseRegistrySnapshot,
 } from '@/lib/supabase-registry-types'
+import { useProjectCenterV2Surface } from '@/hooks/use-project-center-v2'
 import { toast } from '@/components/ui/toast'
 import { writeTextToClipboard } from '@/lib/clipboard'
 import {
@@ -69,13 +79,15 @@ async function createProject(payload: CreateProjectPayload) {
 
 function riskRank(risk: SupabaseRegistryRisk) {
   const severity = { P0: 0, P1: 1, P2: 2, P3: 3 }[risk.severity]
-  const status = risk.status === 'resolved' || risk.status === 'false_positive' ? 10 : 0
+  const status =
+    risk.status === 'resolved' || risk.status === 'false_positive' ? 10 : 0
   return status + severity
 }
 
 function severityClass(severity: SupabaseRegistryRisk['severity']) {
   if (severity === 'P0') return 'border-red-500/40 bg-red-500/10 text-red-300'
-  if (severity === 'P1') return 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+  if (severity === 'P1')
+    return 'border-amber-500/40 bg-amber-500/10 text-amber-300'
   if (severity === 'P2') return 'border-sky-500/40 bg-sky-500/10 text-sky-300'
   return 'border-primary-500/30 bg-primary-500/10 text-primary-300'
 }
@@ -98,7 +110,15 @@ async function copyAgentPackage(project: SupabaseRegistryProject) {
   }
 }
 
-function StatCard({ label, value, detail }: { label: string; value: number | string; detail: string }) {
+function StatCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string
+  value: number | string
+  detail: string
+}) {
   return (
     <div className="rounded-2xl border border-primary-200/60 bg-primary-50/60 p-4 dark:border-primary-800/80 dark:bg-primary-950/30">
       <div className="text-2xl font-semibold text-primary-950 dark:text-primary-50">
@@ -113,7 +133,8 @@ function StatCard({ label, value, detail }: { label: string; value: number | str
 }
 
 function RiskBadge({ risk }: { risk: SupabaseRegistryRisk }) {
-  const resolved = risk.status === 'resolved' || risk.status === 'false_positive'
+  const resolved =
+    risk.status === 'resolved' || risk.status === 'false_positive'
   return (
     <div
       className={cn(
@@ -140,7 +161,9 @@ function ProjectCard({ project }: { project: SupabaseRegistryProject }) {
   const activeRisks = project.risks.filter(
     (risk) => risk.status !== 'resolved' && risk.status !== 'false_positive',
   )
-  const blocked = activeRisks.some((risk) => risk.severity === 'P0' || risk.severity === 'P1')
+  const blocked = activeRisks.some(
+    (risk) => risk.severity === 'P0' || risk.severity === 'P1',
+  )
   const riskList = [...project.risks].sort((a, b) => riskRank(a) - riskRank(b))
 
   return (
@@ -205,7 +228,8 @@ function ProjectCard({ project }: { project: SupabaseRegistryProject }) {
                 Como o agente enxerga
               </h3>
               <p className="mt-1 text-sm text-primary-600 dark:text-primary-400">
-                URL e endpoints seguros para Codex/Claude/Hermes. Chaves sensíveis ficam fora da UI.
+                URL e endpoints seguros para Codex/Claude/Hermes. Chaves
+                sensíveis ficam fora da UI.
               </p>
             </div>
             <button
@@ -219,22 +243,37 @@ function ProjectCard({ project }: { project: SupabaseRegistryProject }) {
           </div>
           <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
             <div>
-              <dt className="uppercase tracking-widest text-primary-500">Project URL</dt>
-              <dd className="mt-1 break-all font-mono text-primary-950 dark:text-primary-50">{SUPABASE_BASE_URL}</dd>
-            </div>
-            <div>
-              <dt className="uppercase tracking-widest text-primary-500">Schema principal</dt>
-              <dd className="mt-1 font-mono text-primary-950 dark:text-primary-50">
-                {project.schemas[0]?.schema_name ?? project.slug.replace(/-/g, '_')}
+              <dt className="uppercase tracking-widest text-primary-500">
+                Project URL
+              </dt>
+              <dd className="mt-1 break-all font-mono text-primary-950 dark:text-primary-50">
+                {SUPABASE_BASE_URL}
               </dd>
             </div>
             <div>
-              <dt className="uppercase tracking-widest text-primary-500">REST</dt>
-              <dd className="mt-1 break-all font-mono text-primary-950 dark:text-primary-50">{SUPABASE_BASE_URL}/rest/v1</dd>
+              <dt className="uppercase tracking-widest text-primary-500">
+                Schema principal
+              </dt>
+              <dd className="mt-1 font-mono text-primary-950 dark:text-primary-50">
+                {project.schemas[0]?.schema_name ??
+                  project.slug.replace(/-/g, '_')}
+              </dd>
             </div>
             <div>
-              <dt className="uppercase tracking-widest text-primary-500">Auth / Storage</dt>
-              <dd className="mt-1 break-all font-mono text-primary-950 dark:text-primary-50">{SUPABASE_BASE_URL}/auth/v1 · {SUPABASE_BASE_URL}/storage/v1</dd>
+              <dt className="uppercase tracking-widest text-primary-500">
+                REST
+              </dt>
+              <dd className="mt-1 break-all font-mono text-primary-950 dark:text-primary-50">
+                {SUPABASE_BASE_URL}/rest/v1
+              </dd>
+            </div>
+            <div>
+              <dt className="uppercase tracking-widest text-primary-500">
+                Auth / Storage
+              </dt>
+              <dd className="mt-1 break-all font-mono text-primary-950 dark:text-primary-50">
+                {SUPABASE_BASE_URL}/auth/v1 · {SUPABASE_BASE_URL}/storage/v1
+              </dd>
             </div>
           </dl>
         </div>
@@ -264,13 +303,21 @@ function ProjectCard({ project }: { project: SupabaseRegistryProject }) {
                   <span className="font-mono text-primary-950 dark:text-primary-50">
                     {schema.schema_name}
                   </span>
-                  <span className={cn('text-xs font-semibold', sensitivityClass(schema.sensitivity))}>
+                  <span
+                    className={cn(
+                      'text-xs font-semibold',
+                      sensitivityClass(schema.sensitivity),
+                    )}
+                  >
                     {schema.sensitivity}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-primary-500">{schema.purpose}</p>
+                <p className="mt-1 text-xs text-primary-500">
+                  {schema.purpose}
+                </p>
                 <p className="mt-2 text-xs text-primary-500">
-                  Agentes: leitura {schema.allow_agent_read ? 'liberada' : 'bloqueada'} · escrita{' '}
+                  Agentes: leitura{' '}
+                  {schema.allow_agent_read ? 'liberada' : 'bloqueada'} · escrita{' '}
                   {schema.allow_agent_write ? 'liberada' : 'bloqueada'}
                 </p>
               </div>
@@ -301,7 +348,9 @@ function ProjectCard({ project }: { project: SupabaseRegistryProject }) {
                       {bucket.public ? 'público' : 'privado'}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-primary-500">{bucket.purpose}</p>
+                  <p className="mt-1 text-xs text-primary-500">
+                    {bucket.purpose}
+                  </p>
                 </div>
               ))
             )}
@@ -315,7 +364,8 @@ function ProjectCard({ project }: { project: SupabaseRegistryProject }) {
           <div className="mt-3 space-y-2">
             {project.agent_profiles.length === 0 ? (
               <div className="rounded-xl border border-dashed border-primary-300/70 p-4 text-sm text-primary-500 dark:border-primary-700">
-                Nenhum grant de agente configurado; API de pacote retorna 403 para agentes sem perfil.
+                Nenhum grant de agente configurado; API de pacote retorna 403
+                para agentes sem perfil.
               </div>
             ) : (
               project.agent_profiles.map((profile) => (
@@ -352,7 +402,9 @@ function ProjectCard({ project }: { project: SupabaseRegistryProject }) {
                 Nenhum risco registrado.
               </div>
             ) : (
-              riskList.map((risk) => <RiskBadge key={`${risk.severity}-${risk.title}`} risk={risk} />)
+              riskList.map((risk) => (
+                <RiskBadge key={`${risk.severity}-${risk.title}`} risk={risk} />
+              ))
             )}
           </div>
         </section>
@@ -367,12 +419,18 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('')
   const [schemaName, setSchemaName] = useState('')
   const [description, setDescription] = useState('')
-  const [environment, setEnvironment] = useState<CreateProjectPayload['environment']>('production')
-  const [sensitivity, setSensitivity] = useState<CreateProjectPayload['sensitivity']>('high')
+  const [environment, setEnvironment] =
+    useState<CreateProjectPayload['environment']>('production')
+  const [sensitivity, setSensitivity] =
+    useState<CreateProjectPayload['sensitivity']>('high')
   const [confirmation, setConfirmation] = useState('')
 
-  const expectedConfirmation = slug ? `CRIAR ${slug.toLowerCase()}` : 'CRIAR <slug>'
-  const canSubmit = Boolean(slug && name && schemaName && confirmation === expectedConfirmation)
+  const expectedConfirmation = slug
+    ? `CRIAR ${slug.toLowerCase()}`
+    : 'CRIAR <slug>'
+  const canSubmit = Boolean(
+    slug && name && schemaName && confirmation === expectedConfirmation,
+  )
 
   const mutation = useMutation({
     mutationFn: createProject,
@@ -390,7 +448,8 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
             Novo projeto Supabase
           </h2>
           <p className="mt-1 text-sm text-primary-600 dark:text-primary-400">
-            Cria o schema isolado, registra o projeto no platform_registry e mantém agentes sem leitura/escrita por padrão.
+            Cria o schema isolado, registra o projeto no platform_registry e
+            mantém agentes sem leitura/escrita por padrão.
           </p>
         </div>
         <button
@@ -405,11 +464,15 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <label className="space-y-1.5 text-sm">
-          <span className="font-medium text-primary-800 dark:text-primary-200">Slug</span>
+          <span className="font-medium text-primary-800 dark:text-primary-200">
+            Slug
+          </span>
           <input
             value={slug}
             onChange={(event) => {
-              const next = event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+              const next = event.target.value
+                .toLowerCase()
+                .replace(/[^a-z0-9-]/g, '')
               setSlug(next)
               if (!schemaName) setSchemaName(next.replace(/-/g, '_'))
             }}
@@ -418,7 +481,9 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
           />
         </label>
         <label className="space-y-1.5 text-sm">
-          <span className="font-medium text-primary-800 dark:text-primary-200">Nome</span>
+          <span className="font-medium text-primary-800 dark:text-primary-200">
+            Nome
+          </span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -427,19 +492,31 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
           />
         </label>
         <label className="space-y-1.5 text-sm">
-          <span className="font-medium text-primary-800 dark:text-primary-200">Schema</span>
+          <span className="font-medium text-primary-800 dark:text-primary-200">
+            Schema
+          </span>
           <input
             value={schemaName}
-            onChange={(event) => setSchemaName(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+            onChange={(event) =>
+              setSchemaName(
+                event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''),
+              )
+            }
             placeholder="meu_projeto"
             className="w-full rounded-xl border border-primary-300 bg-white px-3 py-2 font-mono text-primary-950 outline-none focus:border-accent-500 dark:border-primary-700 dark:bg-primary-950 dark:text-primary-50"
           />
         </label>
         <label className="space-y-1.5 text-sm">
-          <span className="font-medium text-primary-800 dark:text-primary-200">Ambiente</span>
+          <span className="font-medium text-primary-800 dark:text-primary-200">
+            Ambiente
+          </span>
           <select
             value={environment}
-            onChange={(event) => setEnvironment(event.target.value as CreateProjectPayload['environment'])}
+            onChange={(event) =>
+              setEnvironment(
+                event.target.value as CreateProjectPayload['environment'],
+              )
+            }
             className="w-full rounded-xl border border-primary-300 bg-white px-3 py-2 text-primary-950 outline-none focus:border-accent-500 dark:border-primary-700 dark:bg-primary-950 dark:text-primary-50"
           >
             <option value="production">production</option>
@@ -448,10 +525,16 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
           </select>
         </label>
         <label className="space-y-1.5 text-sm">
-          <span className="font-medium text-primary-800 dark:text-primary-200">Sensibilidade</span>
+          <span className="font-medium text-primary-800 dark:text-primary-200">
+            Sensibilidade
+          </span>
           <select
             value={sensitivity}
-            onChange={(event) => setSensitivity(event.target.value as CreateProjectPayload['sensitivity'])}
+            onChange={(event) =>
+              setSensitivity(
+                event.target.value as CreateProjectPayload['sensitivity'],
+              )
+            }
             className="w-full rounded-xl border border-primary-300 bg-white px-3 py-2 text-primary-950 outline-none focus:border-accent-500 dark:border-primary-700 dark:bg-primary-950 dark:text-primary-50"
           >
             <option value="low">low</option>
@@ -461,7 +544,9 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
           </select>
         </label>
         <label className="space-y-1.5 text-sm md:col-span-2">
-          <span className="font-medium text-primary-800 dark:text-primary-200">Descrição</span>
+          <span className="font-medium text-primary-800 dark:text-primary-200">
+            Descrição
+          </span>
           <textarea
             value={description}
             onChange={(event) => setDescription(event.target.value)}
@@ -474,11 +559,20 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
 
       <div className="mt-5 rounded-2xl border border-red-500/30 bg-red-500/5 p-4">
         <div className="flex items-start gap-3 text-sm text-red-300">
-          <HugeiconsIcon icon={Shield01Icon} size={18} strokeWidth={1.6} className="mt-0.5 shrink-0" />
+          <HugeiconsIcon
+            icon={Shield01Icon}
+            size={18}
+            strokeWidth={1.6}
+            className="mt-0.5 shrink-0"
+          />
           <div>
             <p className="font-semibold">Gate de produção</p>
             <p className="mt-1 text-red-200/80">
-              Para executar DDL transacional, digite exatamente <span className="font-mono font-bold">{expectedConfirmation}</span>.
+              Para executar DDL transacional, digite exatamente{' '}
+              <span className="font-mono font-bold">
+                {expectedConfirmation}
+              </span>
+              .
             </p>
           </div>
         </div>
@@ -492,7 +586,9 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
 
       {mutation.isError ? (
         <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {mutation.error instanceof Error ? mutation.error.message : 'Falha ao criar projeto'}
+          {mutation.error instanceof Error
+            ? mutation.error.message
+            : 'Falha ao criar projeto'}
         </div>
       ) : null}
 
@@ -530,6 +626,11 @@ function NewProjectPanel({ onClose }: { onClose: () => void }) {
 
 export function SupabaseProjectsScreen() {
   const [creating, setCreating] = useState(false)
+  const [wizardOpen, setWizardOpen] = useState(false)
+  // Flag server-projected: enquanto o servidor não confirmar a superfície v2,
+  // `apiEnabled` é `false` e a experiência atual permanece idêntica.
+  const v2 = useProjectCenterV2Surface()
+  const v2Enabled = v2.apiEnabled
   const registryQuery = useQuery({
     queryKey: QUERY_KEY,
     queryFn: fetchRegistry,
@@ -545,9 +646,17 @@ export function SupabaseProjectsScreen() {
     )
     return {
       projects: projects.length,
-      schemas: projects.reduce((sum, project) => sum + project.schemas.length, 0),
-      buckets: projects.reduce((sum, project) => sum + project.buckets.length, 0),
-      p0p1: activeRisks.filter((risk) => risk.severity === 'P0' || risk.severity === 'P1').length,
+      schemas: projects.reduce(
+        (sum, project) => sum + project.schemas.length,
+        0,
+      ),
+      buckets: projects.reduce(
+        (sum, project) => sum + project.buckets.length,
+        0,
+      ),
+      p0p1: activeRisks.filter(
+        (risk) => risk.severity === 'P0' || risk.severity === 'P1',
+      ).length,
     }
   }, [snapshot])
 
@@ -558,7 +667,11 @@ export function SupabaseProjectsScreen() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-start gap-4">
               <div className="rounded-2xl bg-accent-500/10 p-3 text-accent-500">
-                <HugeiconsIcon icon={Database01Icon} size={28} strokeWidth={1.5} />
+                <HugeiconsIcon
+                  icon={Database01Icon}
+                  size={28}
+                  strokeWidth={1.5}
+                />
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent-500">
@@ -568,7 +681,9 @@ export function SupabaseProjectsScreen() {
                   Supabase Projects
                 </h1>
                 <p className="mt-2 max-w-3xl text-sm text-primary-600 dark:text-primary-400">
-                  Painel read-only por padrão, puxando dados reais do Supabase self-hosted. Riscos P0/P1 aparecem como gate antes de liberar automação ou escrita.
+                  Painel read-only por padrão, puxando dados reais do Supabase
+                  self-hosted. Riscos P0/P1 aparecem como gate antes de liberar
+                  automação ou escrita.
                 </p>
               </div>
             </div>
@@ -589,54 +704,140 @@ export function SupabaseProjectsScreen() {
                 <HugeiconsIcon icon={RefreshIcon} size={16} strokeWidth={1.6} />
                 Atualizar
               </button>
-              <button
-                type="button"
-                onClick={() => setCreating((value) => !value)}
-                className="inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-600"
-              >
-                <HugeiconsIcon icon={DatabaseAddIcon} size={16} strokeWidth={1.6} />
-                Novo projeto
-              </button>
+              {v2Enabled ? (
+                <button
+                  type="button"
+                  onClick={() => setWizardOpen((value) => !value)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-600"
+                >
+                  <HugeiconsIcon
+                    icon={DatabaseAddIcon}
+                    size={16}
+                    strokeWidth={1.6}
+                  />
+                  Novo projeto isolado
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setCreating((value) => !value)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-600"
+                >
+                  <HugeiconsIcon
+                    icon={DatabaseAddIcon}
+                    size={16}
+                    strokeWidth={1.6}
+                  />
+                  Novo projeto
+                </button>
+              )}
             </div>
           </div>
         </header>
 
-        <section className="rounded-3xl border border-accent-500/20 bg-accent-500/5 p-5">
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-500">
-                1. Criar projeto
-              </p>
-              <p className="mt-1 text-sm text-primary-600 dark:text-primary-400">
-                Clique em Novo projeto, informe slug/nome/schema e confirme com CRIAR &lt;slug&gt;. O Workspace cria o schema e registra no platform_registry.
-              </p>
+        {v2Enabled ? (
+          <section className={PCV2_CARD} data-testid="pcv2-entry">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className={cn('text-lg font-semibold', PCV2_HEADING)}>
+                  Projetos isolados (control plane v2)
+                </h2>
+                <p className={cn('mt-1 max-w-3xl text-sm', PCV2_MUTED)}>
+                  Novo provisionamento passa pelo control plane tipado: dry-run
+                  imutável, gates de segurança, aprovação vinculada ao hash e
+                  rollback em três fases. Nenhum recurso é criado sem aprovação.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  className={PCV2_PRIMARY_BUTTON}
+                  onClick={() => setWizardOpen(true)}
+                  type="button"
+                >
+                  Novo projeto isolado
+                </button>
+                <button
+                  className={PCV2_SECONDARY_BUTTON}
+                  onClick={() => setCreating(true)}
+                  type="button"
+                >
+                  Migrar legado
+                </button>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-500">
-                2. Como o agente conecta
-              </p>
-              <p className="mt-1 text-sm text-primary-600 dark:text-primary-400">
-                Em cada card, Copiar pacote entrega URL, REST, Auth, Storage, schema, buckets e gates para Codex/Claude/Hermes.
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-500">
-                3. Chaves e escrita
-              </p>
-              <p className="mt-1 text-sm text-primary-600 dark:text-primary-400">
-                A UI nunca mostra credenciais elevadas, senhas, segredos ou tokens. Chave pública de cliente só entra por gate/vault quando o projeto estiver classificado e sem P0.
-              </p>
-            </div>
-          </div>
-        </section>
+            <ProjectCenterV2Gate surface={v2.surface}>
+              {wizardOpen ? (
+                <div className="mt-4">
+                  <ProjectCenterV2Wizard
+                    onLeaveInBackground={() => setWizardOpen(false)}
+                  />
+                </div>
+              ) : null}
+            </ProjectCenterV2Gate>
+          </section>
+        ) : null}
 
-        {creating ? <NewProjectPanel onClose={() => setCreating(false)} /> : null}
+        {v2Enabled ? null : (
+          <section className="rounded-3xl border border-accent-500/20 bg-accent-500/5 p-5">
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-500">
+                  1. Criar projeto
+                </p>
+                <p className="mt-1 text-sm text-primary-600 dark:text-primary-400">
+                  Clique em Novo projeto, informe slug/nome/schema e confirme
+                  com CRIAR &lt;slug&gt;. O Workspace cria o schema e registra
+                  no platform_registry.
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-500">
+                  2. Como o agente conecta
+                </p>
+                <p className="mt-1 text-sm text-primary-600 dark:text-primary-400">
+                  Em cada card, Copiar pacote entrega URL, REST, Auth, Storage,
+                  schema, buckets e gates para Codex/Claude/Hermes.
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-500">
+                  3. Chaves e escrita
+                </p>
+                <p className="mt-1 text-sm text-primary-600 dark:text-primary-400">
+                  A UI nunca mostra credenciais elevadas, senhas, segredos ou
+                  tokens. Chave pública de cliente só entra por gate/vault
+                  quando o projeto estiver classificado e sem P0.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {creating ? (
+          <NewProjectPanel onClose={() => setCreating(false)} />
+        ) : null}
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Projetos" value={metrics.projects} detail="Registrados no platform_registry" />
-          <StatCard label="Schemas" value={metrics.schemas} detail="Mapeados por ownership" />
-          <StatCard label="Buckets" value={metrics.buckets} detail="Storage classificado" />
-          <StatCard label="P0/P1 ativos" value={metrics.p0p1} detail="Bloqueiam automação ampla" />
+          <StatCard
+            label="Projetos"
+            value={metrics.projects}
+            detail="Registrados no platform_registry"
+          />
+          <StatCard
+            label="Schemas"
+            value={metrics.schemas}
+            detail="Mapeados por ownership"
+          />
+          <StatCard
+            label="Buckets"
+            value={metrics.buckets}
+            detail="Storage classificado"
+          />
+          <StatCard
+            label="P0/P1 ativos"
+            value={metrics.p0p1}
+            detail="Bloqueiam automação ampla"
+          />
         </section>
 
         {registryQuery.isLoading ? (
@@ -646,11 +847,20 @@ export function SupabaseProjectsScreen() {
         ) : registryQuery.isError ? (
           <div className="rounded-3xl border border-red-500/30 bg-red-500/10 p-6 text-red-300">
             <div className="flex items-start gap-3">
-              <HugeiconsIcon icon={Alert02Icon} size={22} strokeWidth={1.6} className="mt-0.5 shrink-0" />
+              <HugeiconsIcon
+                icon={Alert02Icon}
+                size={22}
+                strokeWidth={1.6}
+                className="mt-0.5 shrink-0"
+              />
               <div>
-                <h2 className="font-semibold">Falha ao ler platform_registry</h2>
+                <h2 className="font-semibold">
+                  Falha ao ler platform_registry
+                </h2>
                 <p className="mt-1 text-sm opacity-80">
-                  {registryQuery.error instanceof Error ? registryQuery.error.message : 'Erro desconhecido'}
+                  {registryQuery.error instanceof Error
+                    ? registryQuery.error.message
+                    : 'Erro desconhecido'}
                 </p>
               </div>
             </div>
