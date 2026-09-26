@@ -232,6 +232,9 @@ function runSqlite(dbPath: string, sql: string): string {
   return execFileSync('sqlite3', [dbPath, '-json', sql], {
     encoding: 'utf8',
     timeout: 15_000,
+    // O board cresce (cards com body longo): sem isto o stdout do sqlite3 estoura
+    // o teto padrao de 1MB do Node e a rota morre com ENOBUFS.
+    maxBuffer: 64 * 1024 * 1024,
   }).trim()
 }
 
