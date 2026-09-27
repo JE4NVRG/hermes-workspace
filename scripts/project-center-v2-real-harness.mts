@@ -1428,7 +1428,7 @@ async function main(): Promise<void> {
     )
     note(
       'observacao',
-      `reentrega do mesmo plano com outbox_id novo: recusada na revalidacao por estado nao executavel (nenhum comando novo, nenhum recurso duplicado); a operacao permanece em ${journeyReplay.state()} e o rollback e o caminho de limpeza — que hoje esbarra em P7-01 para o recurso de role.`,
+      `reentrega do mesmo plano com outbox_id novo: recusada na revalidacao por estado nao executavel (nenhum comando novo, nenhum recurso duplicado); a operacao permanece em ${journeyReplay.state()} e o rollback com gate proprio e o caminho de limpeza.`,
     )
 
     // ---------------------------------------------------------------
@@ -1702,7 +1702,7 @@ async function main(): Promise<void> {
       },
     )
 
-    // Defeito P7-01: o alvo `role:` roda o template de drop de database.
+    // Regressão P7-01: o alvo `role:` nunca pode renderizar DROP DATABASE.
     const roleSurvived = rolesAfterRollback.includes(retry.naming.app_role)
     const ddlOfRollback = commands
       .filter(
@@ -1711,7 +1711,17 @@ async function main(): Promise<void> {
           entry.argv.some((element) => /^DROP /.test(element)),
       )
       .slice(-3)
-    if (roleSurvived) {
+    const dropSql = ddlOfRollback.map((entry) => entry.argv.at(-1) ?? '')
+    const properResourceDrops =
+      dropSql.some(
+        (sql) =>
+          sql ===
+          `DROP DATABASE IF EXISTS ${retry.naming.database} WITH (FORCE)`,
+      ) &&
+      dropSql.some(
+        (sql) => sql === `DROP ROLE IF EXISTS ${retry.naming.app_role}`,
+      )
+    if (roleSurvived || !properResourceDrops) {
       finding(
         'P7-01',
         'critica',
@@ -1723,10 +1733,13 @@ async function main(): Promise<void> {
     check(
       'rollback-alvo-role-nao-remove-role',
       'Rollback de alvo `role:` remove a role do projeto (esperado pelo contrato)',
-      !roleSurvived,
+      !roleSurvived &&
+        properResourceDrops &&
+        databasesAfterRollback.includes(alpha.naming.database) &&
+        databasesAfterRollback.includes(bravo.naming.database),
       roleSurvived
         ? `DEFEITO P7-01: a role ${retry.naming.app_role} permaneceu; a acao de alvo role executou drop_database`
-        : `role ${retry.naming.app_role} removida`,
+        : `role ${retry.naming.app_role} removida; DROP ROLE observado; databases pares intactos`,
       { drop_commands: ddlOfRollback },
     )
 

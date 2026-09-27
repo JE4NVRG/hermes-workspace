@@ -444,8 +444,8 @@ function freezeTemplate(template: ActionTemplate): ActionTemplate {
 }
 
 /**
- * Catálogo fechado de templates por `driver:kind`. Ausência é recusa: um kind
- * sem template não é executável por aquele driver.
+ * Catálogo fechado por `driver:kind` (ou `driver:kind:prefixo` no rollback).
+ * Ausência é recusa: nunca reutilizar SQL de outro recurso.
  */
 export const ACTION_TEMPLATES: Readonly<
   Record<string, ActionTemplate | undefined>
@@ -578,8 +578,8 @@ export const ACTION_TEMPLATES: Readonly<
     compensable: false,
     expects_denial: false,
   }),
-  'postgresql_isolated:disable_resource': freezeTemplate({
-    template_id: 'pg-disable-resource',
+  'postgresql_isolated:disable_resource:database:': freezeTemplate({
+    template_id: 'pg-disable-database',
     kind: 'disable_resource',
     driver: 'postgresql_isolated',
     binary: 'psql',
@@ -604,41 +604,122 @@ export const ACTION_TEMPLATES: Readonly<
     compensable: false,
     expects_denial: false,
   }),
-  'postgresql_isolated:drop_resource_created_by_operation': freezeTemplate({
-    template_id: 'pg-drop-owned-resource',
-    kind: 'drop_resource_created_by_operation',
-    driver: 'postgresql_isolated',
-    binary: 'psql',
-    risk: 'destructive',
-    argv: [
-      'psql',
-      '--no-psqlrc',
-      '--set',
-      'ON_ERROR_STOP=1',
-      '--host',
-      '{{host}}',
-      '--port',
-      '{{port}}',
-      '--username',
-      '{{admin_role}}',
-      '--dbname',
-      'postgres',
-      '--command',
-      '{{sql:drop_database}}',
-    ],
-    timeout_ms: 120_000,
-    compensable: false,
-    expects_denial: false,
-  }),
+  'postgresql_isolated:drop_resource_created_by_operation:database:':
+    freezeTemplate({
+      template_id: 'pg-drop-owned-database',
+      kind: 'drop_resource_created_by_operation',
+      driver: 'postgresql_isolated',
+      binary: 'psql',
+      risk: 'destructive',
+      argv: [
+        'psql',
+        '--no-psqlrc',
+        '--set',
+        'ON_ERROR_STOP=1',
+        '--host',
+        '{{host}}',
+        '--port',
+        '{{port}}',
+        '--username',
+        '{{admin_role}}',
+        '--dbname',
+        'postgres',
+        '--command',
+        '{{sql:drop_database}}',
+      ],
+      timeout_ms: 120_000,
+      compensable: false,
+      expects_denial: false,
+    }),
+  'postgresql_isolated:drop_resource_created_by_operation:role:':
+    freezeTemplate({
+      template_id: 'pg-drop-owned-role',
+      kind: 'drop_resource_created_by_operation',
+      driver: 'postgresql_isolated',
+      binary: 'psql',
+      risk: 'destructive',
+      argv: [
+        'psql',
+        '--no-psqlrc',
+        '--set',
+        'ON_ERROR_STOP=1',
+        '--host',
+        '{{host}}',
+        '--port',
+        '{{port}}',
+        '--username',
+        '{{admin_role}}',
+        '--dbname',
+        'postgres',
+        '--command',
+        '{{sql:drop_role}}',
+      ],
+      timeout_ms: 120_000,
+      compensable: false,
+      expects_denial: false,
+    }),
+  'postgresql_isolated:drop_resource_created_by_operation:app-role:':
+    freezeTemplate({
+      template_id: 'pg-drop-owned-app-role',
+      kind: 'drop_resource_created_by_operation',
+      driver: 'postgresql_isolated',
+      binary: 'psql',
+      risk: 'destructive',
+      argv: [
+        'psql',
+        '--no-psqlrc',
+        '--set',
+        'ON_ERROR_STOP=1',
+        '--host',
+        '{{host}}',
+        '--port',
+        '{{port}}',
+        '--username',
+        '{{admin_role}}',
+        '--dbname',
+        'postgres',
+        '--command',
+        '{{sql:drop_role}}',
+      ],
+      timeout_ms: 120_000,
+      compensable: false,
+      expects_denial: false,
+    }),
 })
 
 export function templateFor(
   kind: PlannedActionKind,
   driver: Driver,
+  targetRef?: string,
 ): ActionTemplate {
-  const template = ACTION_TEMPLATES[`${driver}:${kind}`]
+  const resourceKind =
+    kind === 'disable_resource' || kind === 'drop_resource_created_by_operation'
+  // Supabase usa canal stack; sem template versionado por recurso, recusa
+  // explícita também na consulta ao catálogo (nunca herda o SQL PostgreSQL).
+  if (resourceKind && driver === 'supabase_isolated') {
+    throw new ActionNotAllowedError(kind, 'resource_template_not_supported')
+  }
+  let key = `${driver}:${kind}`
+  if (resourceKind) {
+    const prefix = TARGET_REF_PREFIXES_BY_KIND[kind].find((value) =>
+      targetRef?.startsWith(value),
+    )
+    if (prefix === undefined) {
+      throw new ActionNotAllowedError(
+        kind,
+        'resource_target_prefix_not_supported',
+      )
+    }
+    key += `:${prefix}`
+  }
+  const template = ACTION_TEMPLATES[key]
   if (template === undefined) {
-    throw new ActionNotAllowedError(kind, 'template_not_in_catalog')
+    throw new ActionNotAllowedError(
+      kind,
+      resourceKind
+        ? 'resource_template_not_supported'
+        : 'template_not_in_catalog',
+    )
   }
   if (template.kind !== kind || template.driver !== driver) {
     throw new ActionNotAllowedError(kind, 'template_catalog_mismatch')
@@ -1146,6 +1227,39 @@ export function createActionExecutor(deps: ActionExecutorDeps): ActionExecutor {
       assertExecutionEndpoint(context.endpoint)
       // 8. target_ref coerente com o kind (e ownership marker quando houver).
       assertTargetRef(parsed)
+      if (
+        (parsed.kind === 'disable_resource' ||
+          parsed.kind === 'drop_resource_created_by_operation') &&
+        context.driver === 'postgresql_isolated'
+      ) {
+        const resourceName = parsed.target_ref.split('#', 1)[0].split(':', 2)[1]
+        const expectedName = parsed.target_ref.startsWith('database:')
+          ? context.naming.database
+          : context.naming.app_role
+        if (
+          (parsed.target_ref.startsWith('database:') ||
+            parsed.target_ref.startsWith('role:') ||
+            parsed.target_ref.startsWith('app-role:')) &&
+          resourceName !== expectedName
+        ) {
+          throw new ActionNotAllowedError(
+            parsed.kind,
+            'resource_target_naming_mismatch',
+          )
+        }
+      }
+      if (
+        context.driver === 'supabase_isolated' &&
+        (parsed.kind === 'disable_resource' ||
+          parsed.kind === 'drop_resource_created_by_operation')
+      ) {
+        // Não existe operação Supabase versionada por recurso: nem stack
+        // nem processo pode improvisar um rollback administrativo.
+        throw new ActionNotAllowedError(
+          parsed.kind,
+          'resource_template_not_supported',
+        )
+      }
       // 9. dependências do grafo já concluídas.
       assertDependencies(parsed, context.completedActionIds)
       // 10. revisão observada idêntica à do plano.
@@ -1204,7 +1318,7 @@ export function createActionExecutor(deps: ActionExecutorDeps): ActionExecutor {
           // 11. template fechado por driver:kind e coerente com o declarado —
           // igualdade **exata**: sufixo (`'database'` casando com
           // `'pg-create-database'`) não é aceito (O1 do cross-review).
-          template = templateFor(parsed.kind, context.driver)
+          template = templateFor(parsed.kind, context.driver, parsed.target_ref)
           if (
             context.templateId !== undefined &&
             context.templateId !== template.template_id

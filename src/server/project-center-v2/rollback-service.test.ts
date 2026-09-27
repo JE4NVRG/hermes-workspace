@@ -616,7 +616,7 @@ describe('rollback service — execução', () => {
     })
   }
 
-  it('executa as ações na ordem do plano e devolve o resultado', async () => {
+  it('recusa disable de stack antes de apagar o database', async () => {
     const harness = createHarness({
       resources: [
         ownedResource(),
@@ -640,14 +640,10 @@ describe('rollback service — execução', () => {
     })
     const result = await harness.execute(plan)
 
-    expect(result.aborted).toBe(false)
-    expect(result.failed_action_id).toBeNull()
-    expect(result.completed).toHaveLength(2)
-    expect(harness.driver.calls.map((call) => call.action.kind)).toEqual([
-      'disable_resource',
-      'drop_resource_created_by_operation',
-    ])
-    expect(harness.driver.argvs[0]?.[0]).toBe('psql')
+    expect(result.aborted).toBe(true)
+    expect(result.failed_action_id).toBe('act_rb_disable_stack')
+    expect(result.completed).toHaveLength(0)
+    expect(harness.driver.calls).toHaveLength(0)
   })
 
   it('interrompe o rollback na primeira falha, sem continuar a apagar', async () => {
@@ -677,7 +673,7 @@ describe('rollback service — execução', () => {
 
     expect(result.aborted).toBe(true)
     expect(result.failed_action_id).toBe('act_rb_disable_stack')
-    expect(harness.driver.calls).toHaveLength(1)
+    expect(harness.driver.calls).toHaveLength(0)
   })
 
   it('não executa nada quando há recurso sem ownership comprovado', async () => {
