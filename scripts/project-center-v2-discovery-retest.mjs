@@ -118,6 +118,10 @@ const tryGit = (...args) => {
       ok: true,
       value: execFileSync('git', args, {
         encoding: 'utf8',
+        // Diffs das fatias de UI passam de 1 MiB: sem teto explícito o
+        // execFileSync falha com ENOBUFS e a varredura de segredos reporta
+        // NO-GO falso (mensagem vazia), sem nunca ter lido o diff.
+        maxBuffer: 64 * 1024 * 1024,
         stdio: ['ignore', 'pipe', 'pipe'],
       }),
     }

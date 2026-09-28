@@ -537,3 +537,26 @@ A UX aqui descrita não valida a arquitetura por si só. Ela torna decisões, ga
 | PCV2-QA-003 | removido alias derivável; broker emite `SecretRef` opaca e persiste o binding privado antes da publicação; UI mostra apenas label e fingerprint não reversível ou máscara neutra, nunca token/path |
 | PCV2-QA-005 | `Idempotency-Key` criada/persistida pelo cliente/SDK antes do primeiro POST, reutilizada após timeout e armazenada no servidor somente como hash                                                   |
 | PCV2-QA-006 | approve exige hash/frase; reject usa formulário separado, exige motivo e não solicita nem envia frase de aprovação                                                                                 |
+
+## 15. Referências
+
+Fontes canônicas desta UX e da implementação do PR 5 (UI atrás da flag
+server-projected, desligada por padrão):
+
+- `specs/contracts/project-center-v2.openapi.yaml`: contrato canônico dos nove
+  `operationId`, dos 15 `OperationState`, do catálogo fechado de intenções e dos
+  headers `Idempotency-Key` / `If-Match`.
+- `docs/plans/project-center-v2-implementation-plan.md` (seção "PR 5 — UI do
+  wizard, timeline e acessibilidade"): ordem de entrega, contrato comum de
+  verificação e critérios de aceite desta fatia.
+- `docs/qa/project-center-v2-final-gate.md` (parecer de QA, achado **P3-03**):
+  exige que a superfície v2 só seja habilitada por projeção do servidor e que a
+  UX atual permaneça idêntica com a flag desligada.
+- `docs/security/project-center-v2-independent-review.md` (parecer de Security):
+  fronteira de segredos — nenhuma `SecretRef`, credencial ou path absoluto em
+  DOM, clipboard, toast, URL ou telemetria.
+
+Artefatos desta fatia: `src/lib/project-center-v2-types.ts`,
+`src/lib/project-center-v2-api.ts`, `src/hooks/use-project-center-v2.ts`,
+`src/screens/supabase/project-center-v2-{gate,operation,wizard}.tsx` e a
+integração em `src/screens/supabase/supabase-projects-screen.tsx`.
