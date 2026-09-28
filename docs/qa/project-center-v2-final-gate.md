@@ -342,3 +342,28 @@ crítico (P7-01) no caminho de rollback. NO-GO operacional mantido.**
 - Condição para APPROVE: corrigir P7-01 (seleção de recurso por prefixo, com
   SQL próprio por tipo e `drop_role` realmente ligado) e reexecutar o harness
   verde; as lacunas da seção 14 continuam impedindo ativação em produção.
+
+---
+
+# Parte III — Revalidação independente da correção P7-01 / S7-02
+
+- Data: 2026-09-27; task `t_5f844add`.
+- PR revisado: [JE4NVRG/hermes-workspace#18](https://github.com/JE4NVRG/hermes-workspace/pull/18), base `project-center-v2/impl-7-gate`, head de código e relatório `c362772d215da6d8f8f4110c76dc1be1d0e504d9` (código da correção `30143fa3cd9f92783705acb14a05ff9047b6d681`). Confirmado por `gh pr view -R JE4NVRG/hermes-workspace` e `git rev-parse HEAD` antes do teste; não confundir com o PR #18 de `outsourc-e`.
+- Esta seção substitui **somente o veredito REQUEST_CHANGES das seções 12 e 16** para o head corrigido. O registro histórico da falha anterior permanece auditável.
+
+## 17. Execução própria no head do PR
+
+| Comando / evidência | Resultado independente |
+| --- | --- |
+| `PROJECT_CENTER_V2_TEST_HARNESS=1 node_modules/.bin/tsx scripts/project-center-v2-real-harness.mts --report <arquivo-efêmero>` | exit 0, **25/25 PASS**, 0 defeitos, 60 comandos reais; run `f82c6b01-2da3-4bc4-b422-49b635e7bc70`; relatório próprio da task, não o `p7-fix-report.json` do implementador. |
+| `pnpm project-center:v2:gate` | exit 0: contrato GO 15/15, scanner PASS critical=0 (116 avisos classificados), **32 arquivos/568 testes PASS**. |
+| `git diff --check 2aef8cec..HEAD` | exit 0. |
+| `docker inspect je4ndev_pcv2_f82c6b012da3` e `docker volume inspect je4ndev_pcv2_f82c6b012da3_data` após teardown | Ambos respondem `no such object/volume`; nenhuma limpeza global. |
+
+O harness criou Postgres 17.11 isolado em `127.0.0.1:32936`, container/volume identificados pelo UUID acima; recusou explicitamente porta 5432 e host/work dir de produção. A prova `rollback-com-gate-proprio` passou: hash de plano de 64 caracteres, aprovação vinculada ao hash, duas ações executadas, database alvo removido e databases A/B preservados (asserções em `scripts/project-center-v2-real-harness.mts`, seção da prova 10). A prova `rollback-alvo-role-nao-remove-role` também passou: role `je4ndev_harness_retry_app` ausente após rollback; a trilha `drop_commands` contém **`DROP DATABASE IF EXISTS je4ndev_harness_retry WITH (FORCE)`** e **`DROP ROLE IF EXISTS je4ndev_harness_retry_app`**, ambos `exit_code=0`, na porta efêmera, e os databases A/B permanecem. `rollback-preserva-preexistente`, `flags-desligadas`, `teardown-sem-residuo` e `sem-vazamento-de-material` passaram. Os logs e o relatório próprio estão anexados à task de QA; o relatório versionado do PR é evidência adicional, não a fonte desta decisão.
+
+## 18. Fechamento do defeito e limites
+
+Inspeção do diff de `2aef8cec..30143fa3`: `templateFor(kind, driver, targetRef)` seleciona template fechado por prefixo; `role:`/`app-role:` usam `{{sql:drop_role}}`, `database:` usa `{{sql:drop_database}}`; `disable_resource` aceita apenas `database:` no PostgreSQL, e recursos sem template e Supabase são recusados. A suíte reexecutada cobre `role:`, `app-role:`, `database:`, prefixos `stack:/compose-project:/data-store:/network:` e `disable_resource` para roles; isto fecha S7-02 **em teste de catálogo/recusa**, não em DAST contra serviço vivo. A própria execução real acima confirma P7-01 no PostgreSQL e que o banco dos pares não foi tocado.
+
+**APPROVE condicionado para integração da correção e do pacote, sem autorização de ativação.** P7-01 (crítico) e S7-02 (alto) não se reproduzem no head avaliado. Mantêm-se as lacunas operacionais da seção 14: Supabase ponta a ponta não executável nesta fronteira, lease store durável não exercitado, R2 real proibido, sem DAST/deploy/recursos produtivos. As duas flags seguem desligadas por default e a execução com flags off recusou adapter (`FeatureDisabledError`, zero DDL novo). Merge/produção continuam sob gates separados de Security, integração e autorização humana; este parecer não os substitui.
