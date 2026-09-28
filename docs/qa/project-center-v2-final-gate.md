@@ -157,3 +157,188 @@ Portanto, nesta fase a verificação de rollback/restore/isolation é **contratu
 ## 8. Decisão
 
 **APPROVE (condicionado) — consolidação do Gate 3 liberada para o pacote de discovery. NO-GO operacional.**
+
+---
+
+# Parte II — Gate da implementação (PR 7)
+
+Parecer do gate final automatizado da implementação, conforme a seção "PR 7 —
+Gate final de QA e Security" de `docs/plans/project-center-v2-implementation-plan.md`.
+Esta parte **substitui** a evidência contratual da Parte I no que ela própria
+declarou pendente (provas executadas de verdade); nada aqui autoriza ativação.
+
+## 9. Escopo, ambiente e commits
+
+- **Escopo:** OpenAPI/contrato, varredura de segredos, testes escopados, build e
+  provas reais em harness efémero (dois projetos por driver, replay, falha
+  reconciliável, lease stale, isolamento A×B, backup/restore e rollback).
+- **Ambiente:** Linux 6.8.0-139-generic; Node v22.23.2 (nvm); Docker 29.4.1;
+  cliente/servidor PostgreSQL 17.11 em container descartável
+  (`postgres@sha256:18cfe3ef…b8bbe5d73`); porta efémera publicada apenas em
+  loopback.
+- **Commits:** base do PR = `d9411096` (`je4n/project-center-v2/impl-6-exec`);
+  código do gate = `c585f85b` (scripts, runbook, plano/ADR, `package.json`);
+  este parecer e o relatório do harness entram no commit seguinte do mesmo PR.
+- **Fronteira respeitada:** nenhum recurso existente foi tocado. Proibidos por
+  desenho e não usados: PostgreSQL do host na 5432, database de lab, Docker de
+  produção, R2 real, Nginx, DNS, Cloudflare e systemd.
+- **Artefatos:** `scripts/project-center-v2-contract-check.mjs`,
+  `scripts/project-center-v2-secret-scan.mjs`,
+  `scripts/project-center-v2-real-harness.mts`,
+  `docs/runbooks/project-center-v2-deploy-and-rollback.md` e o relatório
+  versionado `qa-artifacts/pcv2-harness/pr7-final-report.json`.
+
+## 10. Comandos e saídas (escopo separado)
+
+| Comando | Exit | Saída resumida |
+| --- | --- | --- |
+| `pnpm project-center:v2:contract` | 0 | `verdict=GO 15/15 checks PASS` (141 `$ref` locais resolvidos, 9 operationIds únicos, 15 estados/23 arestas/5 terminais, RBAC default deny 9/9, 7/7 mutações com `Idempotency-Key`, 24 artefatos referenciados, 38 arquivos de runtime sem ligar as flags) |
+| `pnpm project-center:v2:scan` | 0 | `"critical": 0`, `"warn": 101` — todo warn tem classe justificada (fixture sintética, catálogo de redaction, denylist do próprio scanner, alvo interno do harness, citação histórica) |
+| `node scripts/project-center-v2-discovery-retest.mjs` | 0 | `failures: []` (reteste do pacote de discovery segue GO) |
+| `vitest run src/server/project-center-v2 src/routes/api/project-center src/lib/project-center-v2-*.test.ts` | 0 | 32 arquivos, 566 testes, 0 falhas |
+| `prettier --check <arquivos deste PR>` | 0 | `All matched files use Prettier code style!` |
+| `prettier --check .` | 1 | 523 arquivos **pré-existentes** fora de escopo (nenhum deste PR) |
+| `eslint scripts/project-center-v2-*.mjs` | 0 | 0 erros; 1 aviso: `.mts` não coberto pelo `eslint.config.js` do repositório |
+| `git diff --check project-center-v2/base-20260811...HEAD` | 0 | sem erro de whitespace |
+| `pnpm run build` | 0 | `vite build` concluído (`built in 18.13s`) |
+| `PROJECT_CENTER_V2_TEST_HARNESS=1 tsx scripts/project-center-v2-real-harness.mts --report …` | 1 | 24/25 provas PASS, 1 defeito crítico, 60 comandos reais, 45.9s |
+| `tsx scripts/project-center-v2-real-harness.mts` (sem opt-in) | 2 | `harness efemero exige opt-in explicito` — zero container, zero DDL, zero alteração de arquivo |
+
+## 11. Provas reais em harness efémero
+
+Postgres 17.11 real em container `je4ndev_pcv2_<uuid>` com volume exclusivo,
+endpoint em loopback e teardown verificado (container, volume, clientes efémeros
+e work dir removidos; `teardown-sem-residuo` PASS, `sem-vazamento-de-material`
+PASS). 24 das 25 provas passaram:
+
+| Prova | Status | Evidência |
+| --- | --- | --- |
+| `harness-guard-opt-in` | PASS | guard aceita só com opt-in e endpoint/work dir dentro da janela efémera |
+| `harness-guard-recusa-ambiente-production` | PASS | `HarnessGuardError` (fail closed) |
+| `harness-guard-recusa-host-target-producao` | PASS | `HarnessGuardError` (fail closed) |
+| `harness-guard-recusa-porta-5432` | PASS | `HarnessGuardError` (fail closed) |
+| `harness-guard-recusa-work-dir-producao` | PASS | `HarnessGuardError` (fail closed) |
+| `harness-guard-recusa-porta-fora-da-janela` | PASS | `HarnessGuardError` (fail closed) |
+| `container-efemero` | PASS | nome/volume derivados de UUID, porta efémera, imagem pinada |
+| `servidor-real` | PASS | `server_version=17.11` respondendo por TCP |
+| `provisiona-dois-projetos` | PASS | A e B em `verifying`, **0 publicados** antes da verificação |
+| `backup-por-projeto` | PASS | dump real de A (`1375` bytes, checksum, prefixo dedicado, retenção 30d) |
+| `prova-negativa-a-b` | PASS | A→A `exit=0`; A→B `exit=2`; B→A `exit=2` (isolamento cruzado real) |
+| `restore-efemero-verificado` | PASS | restore real com bytes conferidos, canário contado e alvo destruído |
+| `verificacao-e-restore-efemero` | PASS | A publica só depois de PASS; alvo efémero destruído |
+| `replay-sem-duplicacao` | PASS | tick pós-conclusão reexecuta 0 DDL (11 antes, 11 depois) |
+| `reentrega-conflita-sem-duplicar` | PASS | reentrega com `outbox_id` novo é recusada na revalidação (`estado_nao_executavel`), 0 comandos novos, 0 duplicação |
+| `falha-transitoria-reconciliavel` | PASS | conexão recusada agenda retry (`tentativa 2/3`), estado parcial zero |
+| `retry-conclui-sem-duplicar` | PASS | retry conclui com exatamente 1 database e 1 role |
+| `falha-parcial-escala-manual` | PASS | database pré-existente ⇒ `manual_intervention_required` |
+| `lease-stale-recusado` | PASS | `LeaseHeldError` para segundo writer; `StaleWriterError` para token velho, 0 comandos novos, fencing 3→4 |
+| `rollback-com-gate-proprio` | PASS | hash e aprovação próprios; remove os 2 recursos do projeto e preserva o par |
+| `rollback-alvo-role-nao-remove-role` | **FAIL** | **DEFEITO P7-01 (crítica)** — detalhe na seção 12 |
+| `rollback-preserva-preexistente` | PASS | recurso sem proveniência recusa o plano e vai para manual sem remover nada |
+| `flags-desligadas` | PASS | `FeatureDisabledError`, 0 DDL novo com o default do repositório |
+| `teardown-sem-residuo` | PASS | container, volume e clientes efémeros ausentes após o run |
+| `sem-vazamento-de-material` | PASS | nenhuma credencial/pepper sintético na evidência (51.393 bytes varridos) |
+
+## 12. Achado P7-01 (crítica) — rollback de alvo `role:` apaga o database
+
+**Esperado pelo contrato:** `drop_resource_created_by_operation` com
+`target_ref` de prefixo `role:`/`app-role:` remove a **role** do projeto, e
+somente ela.
+
+**Observado (prova real):** a ação é aceita pela allowlist, executa SQL de
+**drop de database** e a role permanece órfã. No run de referência, a role
+`je4ndev_harness_retry_app` continuou existindo depois de o plano de rollback
+ser marcado como concluído.
+
+**Causa raiz (dois pontos confirmados no código):**
+
+1. `src/server/project-center-v2/executors/action-executor.ts` aceita
+   `database:`, `role:`, `app-role:`, `stack:`, `compose-project:`,
+   `data-store:` e `network:` para o kind `drop_resource_created_by_operation`
+   (allowlist compilada), ou seja, o tipo do recurso **não** seleciona template.
+2. Existe **um único** template para o kind no catálogo
+   (`postgresql_isolated:drop_resource_created_by_operation`), e o `argv` dele
+   usa `{{sql:drop_database}}` fixo — `DROP DATABASE IF EXISTS {{database}}
+   WITH (FORCE)`. O SQL `drop_role` (`DROP ROLE IF EXISTS {{app_role}}`) está
+   definido em `ADMIN_SQL_TEMPLATES` e **nunca é referenciado** por nenhum
+   template: é código morto.
+
+**Blast radius:** qualquer rollback com alvo de tipo diferente de `database:`
+(`role:`, `app-role:`, `stack:`, `compose-project:`, `data-store:`, `network:`)
+executa o drop de **database**, não do recurso pedido — em especial
+`data-store:`/`network:` não têm SQL próprio algum.
+
+**Impacto:** destruição do recurso errado (inclusive perda do database do
+projeto em um rollback pedido para remover a role), com a role órfã
+remanescente; o próximo provisionamento do mesmo projeto falha em
+`role already exists` e escala para `manual_intervention_required`. Em cenário
+multi-projeto, basta um plano de rollback com alvo de tipo errado para atingir
+o database errado do mesmo projeto.
+
+**Correção mínima exigida antes de aprovar:** o template (e a allowlist) do kind
+passam a ser selecionados pelo prefixo do `target_ref`, com SQL próprio por tipo
+de recurso (`drop_role` para `role:`/`app-role:`), e a prova
+`rollback-alvo-role-nao-remove-role` precisa passar. Enquanto isso, a mitigação
+operacional (remoção manual auditada da role) está declarada em
+`docs/runbooks/project-center-v2-deploy-and-rollback.md`, seção 6.
+
+## 13. Observações menores (não bloqueantes isoladamente)
+
+1. `supabase_isolated:drop_resource_created_by_operation` **não existe** no
+   catálogo: pelo driver Supabase o kind falha com
+   `template_not_in_catalog`. Não foi provado em execução porque o driver
+   Supabase não é executável nesta fronteira (seção 14).
+2. Escalada para intervenção manual a partir de estado terminal não move a
+   máquina de estados (`succeeded` permanece `succeeded`), o que é coerente com
+   o contrato, mas significa que "status failed" e "estado canónico" divergem —
+   documentar no runbook para o operador não se guiar só pelo campo de estado.
+3. `eslint.config.js` não cobre `scripts/**/*.mts`; o harness real fica sem
+   lint. Recomendação: incluir o glob e revisar erros em card próprio.
+4. `prettier --check .` acusa 523 arquivos pré-existentes fora do escopo deste
+   PR (`.md` de `agents/`, `swarms/` etc.); a contagem fresca está na seção 10,
+   sem mascarar o resultado global.
+
+## 14. O que não foi executável nesta fronteira
+
+1. **Driver Supabase (`supabase_isolated`) ponta a ponta:** o executor exige um
+   `StackAdapter` (`adapter_id` dedicado) e uma porta de projeção de projeto que
+   o repositório não contém (o PR 6 deixa a implementação para o deployment), e
+   o template `sb-stack-full` exige seis serviços com imagens pinadas por digest
+   ausentes neste host. **As provas reais de dois projetos por driver não estão
+   completas**: `postgresql_isolated` foi provado de verdade;
+   `supabase_isolated` permanece contratual/documental.
+2. **Lease store durável do deployment:** a prova usa o store em memória
+   declarado no PR 6 como fixture de referência; o comportamento distribuído
+   (relógio/latência reais entre writers) não é exercitado.
+3. **Destino R2 real:** proibido nesta fronteira; a prova usa a porta de destino
+   local com prefixo dedicado.
+4. **Recursos de produção** (PostgreSQL do host na 5432, database de lab,
+   Docker/Nginx/DNS/Cloudflare/systemd existentes) e **merge/release**: fora do
+   escopo por decisão do card.
+
+## 15. Flags e side effects
+
+- `PROJECT_CENTER_V2_ENABLED=false` e `PROJECT_CENTER_V2_WORKER_ENABLED=false`
+  confirmados ao final: nenhuma atribuição viva de `=true` em 38 arquivos de
+  runtime (check `flags-desligadas` do gate contratual) e prova de execução
+  recusada com `FeatureDisabledError` (check `flags-desligadas` do harness).
+- Zero side effect em produção: nenhum recurso existente tocado, nenhum
+  container/volume/porta sobrevivente, nenhum segredo real usado (fixtures
+  sintéticas em runtime e varredura `critical: 0`).
+- Rastreabilidade do achado QA P3-03 verificada: ADR, UX e plano citam os
+  pareceres, o contrato canónico e os gates versionados (agora incluindo o
+  runbook e o harness); o gate contratual enforça essa checagem
+  (`referencias-cruzadas-p3-03` PASS).
+
+## 16. Decisão
+
+**REQUEST_CHANGES — gate contratual verde, mas a prova real encontrou 1 defeito
+crítico (P7-01) no caminho de rollback. NO-GO operacional mantido.**
+
+- Automatizado: `contract` GO 15/15, `scan` 0 críticos, reteste de discovery GO,
+  566 testes escopados, build e diff-check verdes.
+- Real: 24/25 provas PASS em Postgres 17.11 efémero; a única falha é um defeito
+  **crítico** que destrói o recurso errado no rollback.
+- Condição para APPROVE: corrigir P7-01 (seleção de recurso por prefixo, com
+  SQL próprio por tipo e `drop_role` realmente ligado) e reexecutar o harness
+  verde; as lacunas da seção 14 continuam impedindo ativação em produção.
