@@ -98,12 +98,22 @@ export const DRIVER_REGISTRY: Readonly<Partial<Record<Driver, DryRunDriver>>> =
     [POSTGRESQL_DRIVER_ID]: postgresqlIsolatedDriver,
   })
 
-export function selectDryRunDriver(driver: unknown): DryRunDriver {
+/**
+ * Seleciona o driver de dry-run pelo nome canônico.
+ *
+ * O registro default é o `DRIVER_REGISTRY` global (PR 2). Um registro
+ * alternativo pode ser injetado (ex.: composição da API v2 no PR 4, que
+ * precisa dos dois drivers) sem alterar a asserção congelada do PR 2.
+ */
+export function selectDryRunDriver(
+  driver: unknown,
+  registry: Readonly<Partial<Record<Driver, DryRunDriver>>> = DRIVER_REGISTRY,
+): DryRunDriver {
   const name = typeof driver === 'string' ? driver : String(driver)
   if (!(DRIVERS as ReadonlyArray<string>).includes(name)) {
     throw new DriverUnavailableError(name)
   }
-  const registered = DRIVER_REGISTRY[name as Driver]
+  const registered = registry[name as Driver]
   if (registered === undefined) {
     throw new DriverUnavailableError(name)
   }
@@ -150,6 +160,11 @@ export interface PlanRequest {
   readonly observed: ObservedState
   readonly policy?: ProjectCenterV2PolicySnapshot
   readonly flags?: ProjectCenterV2Flags
+  /**
+   * Registro de drivers de dry-run; default é o global do PR 2. A API v2
+   * injeta aqui os dois drivers allowlisted sem mexer na asserção do elo 2.
+   */
+  readonly drivers?: Readonly<Partial<Record<Driver, DryRunDriver>>>
 }
 
 /** Referência persistida de um plano anterior (para reuso idempotente). */
@@ -303,7 +318,10 @@ export function planProject(request: PlanRequest): CanonicalPlan {
   const intent = projectIntentSchema.parse(request.intent)
   const observed = assertObservedState(request.observed)
   const policy = request.policy ?? DEFAULT_POLICY_SNAPSHOT
-  const driver = selectDryRunDriver(intent.driver)
+  const driver = selectDryRunDriver(
+    intent.driver,
+    request.drivers ?? DRIVER_REGISTRY,
+  )
 
   const validation = driver.validate(intent, policy)
   if (!validation.ok) {

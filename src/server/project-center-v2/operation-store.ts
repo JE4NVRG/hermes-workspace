@@ -89,6 +89,13 @@ export interface OperationStore {
     projectId: string,
     environment: string,
   ) => ReadonlyArray<Operation>
+  /**
+   * Compensação da unidade de trabalho do PR 4: remove uma operação
+   * **recém-criada** quando o commit atômico falha depois dela. Uso exclusivo
+   * do caminho de compensação — nunca é exposto à superfície HTTP e o adapter
+   * durável precisa implementá-lo dentro da mesma transação do commit.
+   */
+  readonly discard?: (operationId: string) => void
 }
 
 export interface InMemoryOperationStoreOptions {
@@ -272,6 +279,10 @@ export function createInMemoryOperationStore(
             !TERMINAL_LIKE.has(candidate.state),
         ),
       )
+    },
+
+    discard(operationId: string): void {
+      operations.delete(operationId)
     },
   }
 }
