@@ -230,3 +230,202 @@ A execução real dessas provas **permanece obrigatória** nos PRs 6/7, com `PRO
 ## 8. Decisão
 
 **APPROVE (condicionado) — pacote de discovery consolidável no Gate 3, com NO-GO operacional mantido e as correções P2 obrigatórias antes dos PRs 4, 6 e 7 da implementação.**
+
+# Parte II — Parecer de Security da implementação (cadeia `impl-1..impl-7`)
+
+- Data: 2026-09-25
+- Task: `t_570cba7c` (tenant `project-center-v2-20260811`), skill `agency-agents/security`
+- PR revisado: [JE4NVRG/hermes-workspace#16](https://github.com/JE4NVRG/hermes-workspace/pull/16)
+- Head revisado: `project-center-v2/impl-7-gate` @ `2aef8ceca168c80a5429dbd1500559da33e106c9`
+- Base do PR: `project-center-v2/impl-6-exec` @ `d9411096`; diff do pacote: `project-center-v2/base-20260811...HEAD` (88 arquivos, +49.641/−89, 15 commits)
+- Branch desta revisão: `project-center-v2/security-impl` (este documento é o único artefato alterado)
+- Papel: revisão **independente do autor e do QA** — o gate do PR 7 (`t_7d77038e`) e o parecer de QA (`docs/qa/project-center-v2-final-gate.md`) foram tratados como alegações a reproduzir, não como evidência
+- Escopo operacional: leitura de repositório + harness efémero isolado + container descartável `je4ndev_pcv2_<hex>`. Nenhum recurso de produção foi tocado (seção 16)
+
+> **Nota de vigência (2026-09-28) — esta Parte II está superada pelo head corrigido.** O veredito in-doc abaixo (`REQUEST_CHANGES`, seções 9 e 17) é o parecer sobre o head revisado `2aef8ceca168c80a5429dbd1500559da33e106c9` (`project-center-v2/impl-7-gate`). A correção de S7-01/S7-02 foi entregue em `project-center-v2/fix-p7-01` @ `c362772d` e revalidada por Security em **2026-09-27** com `APPROVE condicionado`, sem achado bloqueante no escopo: https://github.com/JE4NVRG/hermes-workspace/pull/18#issuecomment-5851443302. A Parte II permanece como registro fiel do head original; o estado integrado da base é o do head corrigido. Flags `false` e produção NO-GO seguem valendo.
+
+## 9. Parecer
+
+**REQUEST_CHANGES — o pacote de implementação não pode ser integrado na base enquanto o alvo do rollback continuar selecionando o SQL pelo `driver:kind` e ignorando o tipo do `target_ref`.**
+
+Motivos objetivos:
+
+- o achado **crítico P7-01** do gate de QA é **real e foi reproduzido por mim com execução própria** — não por leitura do relatório do QA: o harness efémero que eu mesmo rodei entregou `DROP DATABASE IF EXISTS je4ndev_harness_retry WITH (FORCE)` ao `psql` num rollback cujo alvo era `role:je4ndev_harness_retry_app`, com `exit_code=0` e a role **intacta** (seção 13.1);
+- existe uma **segunda ocorrência da mesma causa raiz** que não consta do parecer de QA: o kind `disable_resource` aceita `role:`/`stack:`/`compose-project:`/`data-store:`/`network:` e executa `REVOKE ALL ON DATABASE {{database}} FROM PUBLIC` em todos eles (seção 13.2). Corrigir só o `drop_resource_created_by_operation` deixa o defeito vivo;
+- **todo o resto do pacote é sólido e passa com execução própria**: os dois scripts determinísticos do PR 7 (`GO 15/15` e `PASS critical=0`), o `gate` completo (32 arquivos / 566 testes), 121 testes reexecutados nos 6 arquivos de maior risco, além dos achados anteriores de R4 (F1–F5), R6 (F1–F2) e dos P2-01/P2-02/P2-03 do discovery que eu **verifiquei fechados no código**, não apenas no parecer de quem corrigiu;
+- nenhum segredo real, DSN com credencial, JWT, service key ou `sref_` integral aparece no pacote nem no diff (116 avisos do scanner são fixtures sintéticas e linhas justificadas; a minha varredura independente de 12 padrões sobre 50.653 linhas de diff deu **0 críticos**);
+- a fronteira de ambiente foi honrada: nenhum container/volume sobrevivente, endpoint publicado só em loopback, porta 5432 do host intocada, flags `false` em todo o caminho de runtime.
+
+Este parecer **não** é GO operacional e **não** autoriza ativação de flag, deploy, DDL, Docker de produção, R2, Nginx, DNS ou systemd.
+
+## 10. Independência e método
+
+1. **Branch próprio a partir do head:** `git checkout -b project-center-v2/security-impl je4n/project-center-v2/impl-7-gate`, com worktree próprio e `node_modules` simbólico para a raiz. Nenhum arquivo do PR 7 (contrato ou parecer de QA) foi editado.
+2. **Reexecução dos gates do PR 7** em vez de confiar nos `command_exits` do handoff (seção 11).
+3. **Reexecução do harness efémero real** com UUID próprio, relatório próprio e verificação de teardown (seção 14).
+4. **Sonda adversarial própria** (13 testes, arquivo temporário removido antes do commit) escrita para reproduzir o caminho real do executor com adapter falso instrumentado — prova o que o processo **receberia**, sem depender de Docker. Preservada fora do repositório em `~/.hermes/profiles/security/cache/scratch/pcv2-security-probe.test.ts`.
+5. **Varredura dura própria de secrets** (12 padrões + IP real do VPS + path absoluto) sobre o diff e sobre o pacote, com triagem manual de cada acerto.
+6. **Verificação de fechamento por código** dos achados anteriores de Security (R4 e R6) e das condições P2 do discovery, com `file:line` e teste de regressão correspondente.
+
+## 11. Evidência executada (minha, neste head `2aef8cec`)
+
+| Comando                                                                                              | Resultado                                                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm project-center:v2:contract`                                                                    | `verdict=GO 15/15 checks PASS`, exit 0                                                                                                                       |
+| `pnpm project-center:v2:scan`                                                                        | `verdict=PASS critical=0 warn=116`, diff `base-20260811...HEAD` (49.641 linhas, 88 arquivos, 1 arquivo de captura), allowlist 3/3 usada, 0 obsoleta, exit 0  |
+| `pnpm project-center:v2:gate`                                                                        | exit 0: contrato + varredura + **32 arquivos / 566 testes PASS**                                                                                             |
+| `PROJECT_CENTER_V2_TEST_HARNESS=1 pnpm project-center:v2:harness`                                    | exit 1: **24/25 provas PASS, 60 comandos reais**, `git_sha=2aef8cec`, relatório `qa-artifacts/pcv2-harness/b04a31aa-bb6c-4c9b-8690-00b5513b7ab0/report.json` |
+| `vitest run` (http, redaction-canary, lease-store, action-executor, rollback-service, secret-broker) | **121 testes PASS** em 6 arquivos                                                                                                                            |
+| Sonda própria (13 casos)                                                                             | **13/13 PASS** — 6 provando o defeito, 7 provando que as defesas fecham                                                                                      |
+| `tsc -p tsconfig.json --noEmit`                                                                      | **0 erros** no escopo `project-center` (pré-existentes fora do escopo permanecem)                                                                            |
+| `eslint src/server/project-center-v2`                                                                | **0 erros**, 68 avisos (`require-await`)                                                                                                                     |
+| `prettier --check` (pacote + scripts do PR 7)                                                        | `All matched files use Prettier code style!`                                                                                                                 |
+| `git diff --check base-20260811...HEAD`                                                              | exit 0, limpo                                                                                                                                                |
+
+Detalhe do harness que eu rodei (não o do QA): container `je4ndev_pcv2_b04a31aabb6c`, volume `je4ndev_pcv2_b04a31aabb6c_data`, endpoint `127.0.0.1:39460` (loopback), imagem pinada por digest `postgres@sha256:18cfe3ef…`, teardown `container_removido=true volume_removido=true residuo_apos=0`, e `material_presente=false pepper_presente=false` com 51.406 bytes de evidência conferidos contra o material sintético gerado em runtime.
+
+## 12. Critérios do card, um por um
+
+| Critério             | Situação               | Evidência (executada ou `file:line`)                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Least privilege**  | Atende                 | `env:0.self` para todo recurso de banco (`src/server/project-center-v2/executors/action-executor.ts:411-421`); `apply_least_privilege` faz `REVOKE ALL … FROM PUBLIC`; prova real A×B no meu harness: `A->A exit=0; A->B exit=2; B->A exit=2` com `FATAL: permission denied for database`                                                                                                               |
+| **Default deny**     | Atende                 | `POLICY_DEFAULT = 'deny'` (`src/server/project-center-v2/policy.ts:14`); RBAC default-deny com dono único por operação (`contract-check` check `rbac-default-deny`); token de agente em `project:approve` → `403` sem side effect (`src/server/project-center-v2/http.test.ts:1141`)                                                                                                                    |
+| **Idempotência**     | Atende                 | chave client-owned persistida só como hash vinculada a ator+rota+payload por 24 h (`src/server/project-center-v2/idempotency.ts:96-113`); outbox atómico; provas reais `replay-sem-duplicacao`, `reentrega-conflita-sem-duplicar`, `retry-conclui-sem-duplicar` (PASS no meu harness)                                                                                                                   |
+| **Auditoria**        | Atende                 | trilha append-only com `update`/`delete` sempre negados (`src/server/project-center-v2/audit-store.ts:11,26-32`); paginação com teto (`:21-23`); nenhum evento entrega material (canário P3-03 vivo em `redaction-canary.test.ts:227-315`)                                                                                                                                                              |
+| **Blast radius**     | **Reprovado em P7-01** | a ação de rollback de um recurso lógico apaga o **database** do projeto (seção 13.1); fora desse caminho, alvos proibidos (`*`, `database:postgres`, `role:postgres`, `template[01]`) são recusados com `POLICY_DENIED` (`src/server/project-center-v2/rollback-service.ts:70-75,215-241`) e recurso pré-existente nunca é removido (prova `rollback-preserva-preexistente` PASS)                       |
+| **Allowlists**       | Atende                 | binários `psql/pg_dump/pg_restore/pg_isready` (`action-executor.ts:333-338`); host target, driver, endpoint loopback e janela de porta validados **antes** de qualquer adapter (`:1127-1162`); `assertFixedArgv` recusa binário fora da allowlist, path absoluto, `..`, `\`, `://` e metacaractere de shell (`:736-778`) — confirmado pela minha sonda (0 chamadas ao adapter em 6 `target_ref` hostis) |
+| **Secret broker**    | Atende                 | `SecretRef` opaca gerada com `randomBytes` (≥32 bytes) e falha fechado se a CSPRNG devolver forma inesperada (`src/server/project-center-v2/secret-broker.ts:133-158`); binding atómico por digest com pepper privado, `masked_ref`/`fingerprint` não deriváveis; material nunca em argv nem em log; prova real `sem-vazamento-de-material` PASS                                                        |
+| **Gate de DDL**      | Atende (com P7-01)     | SQL administrativo **só** de templates versionados internos, sem caminho para SQL do request (`action-executor.ts:404-422,687-702`); a seleção do template é que está errada em P7-01                                                                                                                                                                                                                   |
+| **Gate de Docker**   | Atende                 | endpoint/host de execução com denylist da 5432 (`action-executor.ts:186-188`); guard do harness recusa produção, host não allowlisted, porta 5432 e path de produção (`src/server/project-center-v2/harness-guard.ts`), com as 6 provas `harness-guard-*` PASS no meu run                                                                                                                               |
+| **Gate de R2**       | Atende nesta fronteira | destino R2 real proibido; porta de destino injetada com prefixo dedicado e sem path do request (`src/server/project-center-v2/backup-service.ts:123`); provado `backup-por-projeto` (checksum + retenção 30 d)                                                                                                                                                                                          |
+| **Gate de restore**  | Atende                 | restore só em alvo efémero com forma própria, distinto da origem, destruído no fim (`src/server/project-center-v2/restore-verifier.ts:61-149`); provas `restore-efemero-verificado` e `verificacao-e-restore-efemero` PASS (alvo `je4ndev_pcv2_…` criado, usado e destruído)                                                                                                                            |
+| **Gate de rollback** | Reprovado em P7-01     | gate próprio com hash, `approval_id` novo e ownership provado (`rollback-service.ts:260-286`) funciona — `rollback-com-gate-proprio` PASS — mas o **efeito** do alvo `role:` está errado                                                                                                                                                                                                                |
+| **Redaction**        | Atende                 | 5 classes de padrão + teto de profundidade/propriedades (`src/server/project-center-v2/redaction.ts`); `evidence_ref` (R6-F2) passou a ser redigido nos **três** produtores (`action-executor.ts:1084,1195,1250`) com forma restrita e teto 256; canário vivo nos três canais (`redaction-canary.test.ts:456-520`)                                                                                      |
+
+## 13. Achados
+
+### 13.1 S7-01 — **CRÍTICA / BLOQUEANTE** — a ação de rollback escolhe o SQL pelo `driver:kind` e ignora o tipo do alvo
+
+Equivalente ao P7-01 do gate de QA, **reproduzido por execução própria** (não por leitura do relatório alheio).
+
+**Local:** `src/server/project-center-v2/executors/action-executor.ts:607-632` (único template do kind, `argv` fixo em `'{{sql:drop_database}}'`), contra a allowlist de `:380-388` (`database:`, `role:`, `app-role:`, `stack:`, `compose-project:`, `data-store:`, `network:`) e os parâmetros de `:1279-1290` (`database: naming.database`).
+
+**Prova real (minha execução, harness efémero, Postgres 17.11):** a ação de rollback com alvo `role:je4ndev_harness_retry_app` entregou ao `psql`, com `exit_code=0`:
+
+```
+DROP DATABASE IF EXISTS je4ndev_harness_retry WITH (FORCE)
+```
+
+e a role `je4ndev_harness_retry_app` continuou existindo (`rollback-alvo-role-nao-remove-role` = FAIL no relatório `qa-artifacts/pcv2-harness/b04a31aa-bb6c-4c9b-8690-00b5513b7ab0/report.json`).
+
+**Prova determinística adicional (sonda própria, sem Docker):** `templateFor('drop_resource_created_by_operation','postgresql_isolated')` + `templateParamsFor` renderiza `DROP DATABASE` para `role:`, `stack:`, `network:` e `data-store:`; e o caminho end-to-end pelo `createActionExecutor` entrega esse mesmo argv ao adapter. Também confirmei que `ADMIN_SQL_TEMPLATES.drop_role` (`:421`) é **código morto**: nenhum `argv` de `ACTION_TEMPLATES` o referencia.
+
+**Alcançabilidade (confirmada, não teórica):** o plano de rollback é construído a partir de `resource.target_ref` observado pelo driver (`rollback-service.ts:260-286`), e só `database:` cai no ramo correto; `role:`, `stack:`, `compose-project:`, `data-store:` e `network:` escolhem o drop errado. O `FORBIDDEN_ROLLBACK_TARGETS` (`:70-75`) não protege: barra apenas `role:postgres` e `database:postgres`.
+
+**Blast radius:** qualquer recurso do projeto cujo alvo não seja `database:` executa `DROP DATABASE … WITH (FORCE)` no **database do próprio projeto** — destruição de dados por uma ação cujo intento era remover uma role/rede/stack, com a role órfã permanecendo e a operação terminando `rolled_back` com aparência de sucesso. Hoje mitigado apenas por: flags `false`, nenhum adapter privilegiado real injetado e a mitigação operacional da seção 6 do runbook.
+
+**Remediação exigida:** selecionar o template pelo **prefixo do `target_ref`** (não só por `driver:kind`), com `argv`/SQL próprios por tipo (`drop_role` para `role:`/`app-role:`, `drop_database` para `database:`), **falhar fechado** com erro tipado para prefixos sem template próprio, e teste unitário do mapeamento prefixo→SQL incluindo os casos negativos. Decisão explícita sobre o driver Supabase registrada no parecer/runbook.
+
+### 13.2 S7-02 — **ALTA / BLOQUEANTE (mesma causa raiz)** — `disable_resource` também executa operação de database para alvos que não são database
+
+**Local:** `src/server/project-center-v2/executors/action-executor.ts:581-606` (template `pg-disable-resource`, `argv` fixo em `'{{sql:revoke_public}}'`) contra a allowlist de `:371-379` (`database:`, `role:`, `app-role:`, `stack:`, `compose-project:`, `data-store:`, `network:`).
+
+**Prova (sonda própria, execução):** para alvos `role:`, `network:`, `stack:` e `data-store:` o executor renderiza `REVOKE ALL ON DATABASE je4ndev_acme_site_development FROM PUBLIC`.
+
+**Alcançabilidade:** `DISABLE_FIRST_PREFIXES` (`rollback-service.ts:58-63`) faz `stack:`, `compose-project:`, `network:` e `data-store:` caírem **justamente** neste kind (`:274-286`) — ou seja, o ramo "desative antes de remover" de qualquer rollback com stack/rede passa por aqui.
+
+**Impacto:** menor que S7-01 (não destrutivo e idempotente no database do próprio projeto), mas é a **mesma classe de defeito**: a ação não opera no recurso que diz operar e o operador recebe sucesso. Corrigir só S7-01 deixa o caminho vivo.
+
+**Remediação:** a mesma de S7-01 — dispatch por prefixo de `target_ref` com recusa fechada para prefixos sem template próprio (rede/stack sem operação de desativação implementada devem **falhar**, não revogar PUBLIC).
+
+### 13.3 S7-03 — **BAIXA / NÃO BLOQUEANTE** — divergência de contagem no handoff do PR 7
+
+O handoff do gate declara `eslint scripts (0 erros, 1 aviso .mts fora do config)` e o comentário do PR 6 declarou 66 avisos; eu medi **68 avisos `require-await`** em `src/server/project-center-v2` (0 erros) — mesma natureza dos já existentes, nenhum novo introduzido por este PR. É atrito de rastreabilidade, não risco. (A mesma divergência de contagem já tinha sido observada de 56 vs 66 no cross-review de R6.)
+
+### 13.4 Fechamento verificado dos achados anteriores (minha conferência, com execução)
+
+| Achado anterior                                              | Situação    | Como verifiquei                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R4-F1 (ALTA) — sem teto de corpo HTTP                        | **Fechado** | `MAX_REQUEST_BODY_BYTES = 64 * 1024` (`http.ts:141`); leitura incremental com `reader.cancel()` no teto e recusa por `content-length` sem ler um byte (`http.ts:975-1006`); testes `http.test.ts:589,635,691` PASS na minha execução                                                                                                                                         |
+| R4-F2 (MÉDIA) — rate limit uniforme 30/min                   | **Fechado** | `RATE_LIMIT_MAX_BY_OPERATION` com 10/min no dry-run e 5/min nas 6 mutações (`http.ts:366-376`); `429` + `Retry-After` (`http.test.ts:797`) PASS                                                                                                                                                                                                                              |
+| R4-F3 (MÉDIA) — claim `environment` só no dry-run            | **Fechado** | `assertEnvironmentMatch` em **8** pontos do pipeline (`http.ts:1525,1624,1736,1825,1886,1979,2051,2143`); `http.test.ts:2047` PASS                                                                                                                                                                                                                                           |
+| R4-F4 (BAIXA) — allowlist de `SecretRef` por sufixo          | **Fechado** | comparação do caminho exato com `path.length === 4` (`http.ts:807-816`); `http.test.ts:1904` PASS                                                                                                                                                                                                                                                                            |
+| R4-F5 (BAIXA) — ramo morto `environment_not_granted`         | **Fechado** | tabela de roles injetável e ramo exercitado por teste (`policy.test.ts`, 23 testes PASS)                                                                                                                                                                                                                                                                                     |
+| R6-F1 (ALTA) — exclusividade do lease com identidade default | **Fechado** | identidade por processo `deps.holderRef ?? \`${process.pid}-${randomUUID()}\`` (`worker.ts:496`); reaquisição idempotente **exige prova de posse** (`lease_id`+`holder_ref`+`operation_id`) e o mesmo `holder_ref` sem prova recebe 409 (`lease-store.ts:350-371`); confirmado pela minha sonda (`LeaseHeldError`nos dois casos) e por`lease-store.test.ts:101,127,149` PASS |
+| R6-F2 (MÉDIA) — `evidence_ref` sem redaction/forma           | **Fechado** | `safeEvidenceRef` nos 3 produtores (`action-executor.ts:1084,1195,1250`), teto 256 e recusa de forma (`redaction.ts:198-266`); canário vivo nos 3 canais (`redaction-canary.test.ts:456-520`) e na minha sonda (DSN/JWT/path/`sref_` neutralizados)                                                                                                                          |
+| R6-observação — `context.templateId` por sufixo              | **Fechado** | igualdade exata (`action-executor.ts:1208-1213`)                                                                                                                                                                                                                                                                                                                             |
+| R6-observação — IP real do VPS em teste                      | **Fechado** | `0` ocorrências de `109.199.114.111`/`100.106.125.67` em todo o diff; fixtures usam RFC 5737 (`198.51.100.7`, `192.0.2.10`)                                                                                                                                                                                                                                                  |
+| P2-01 — `needs_reconcile` no threat model                    | **Fechado** | `threat-model:207` agora usa `manual_intervention_required`; **0** ocorrências residuais em `specs/`/`src/` (as que existem são citações históricas nos próprios pareceres)                                                                                                                                                                                                  |
+| P2-02/P2-03 — pin `0bbe2492` no PRD                          | **Fechado** | `docs/PRD-project-center-v2.md:582` referencia branch + path, sem pin de commit                                                                                                                                                                                                                                                                                              |
+| Actor claims verificáveis (API-20)                           | **Fechado** | `x-rbac-policy.actor-claims` + `x-segregation` com `actor_type_required: human` (`threat-model:108,410,412`) e enforcement real: `http.test.ts:1141` "recusa token de agente com project:approve sem side effect" PASS na minha execução                                                                                                                                     |
+
+## 14. Provas reais: o que foi executado e o que não foi
+
+**Executado de fato** (com comando real, não narrativa):
+
+- provisionamento real de **dois projetos por driver disponível** (`A=je4ndev_harness_alpha`, `B=je4ndev_harness_bravo`) num PostgreSQL 17.11 em container descartável, por `psql` de verdade dentro da imagem pinada por digest;
+- **prova negativa A×B completa** com controle positivo: `A->A exit=0`, `A->B exit=2`, `B->A exit=2` (negação real do servidor, `permission denied for database`);
+- **backup real** por `pg_dump` com checksum, prefixo dedicado e retenção (`bytes=1375`, `retencao=30d`);
+- **restore efémero verificado** (`pg_restore`, 1 linha canário, alvo destruído e confirmado ausente do cluster);
+- **rollback** com gate próprio (`plano=064f…`, 2 recursos removidos, B intacto) e **replay/reentrega sem duplicação** (DDL antes=11, depois=11; reentrega `skipped` com 0 comandos novos);
+- **lease**: segundo writer recusado, writer stale recusado **antes** do adapter (`fencing=3->4`, 0 comandos novos);
+- **falha transitória** reconciliada (retry 2/3 sem duplicar) e **falha parcial** escalando para `manual_intervention_required`;
+- **flags desligadas** impedem execução (`FeatureDisabledError`, 0 DDL novo);
+- **teardown sem resíduo** (`docker ps -a` / `docker volume ls` filtrados por `je4ndev_pcv2`: vazio).
+
+**Não executado, com o motivo:**
+
+1. **Driver `supabase_isolated` ponta a ponta** — o executor exige `StackAdapter` (`supabase-stack-adapter`) e `SupabaseProjectionPort`, que **não existem no repositório** (o PR 6 os deixa para o deployment), e o template `sb-stack-full` exige 6 serviços pinados por digest ausentes no host. Registrado como nota explícita pelo harness e **reproduzido por mim**: nenhuma prova real de dois projetos por esse driver.
+2. **Lease store durável do deployment** — as provas usam o store in-memory declarado como fixture de referência; a atomicidade do adapter durável (Redis/Postgres) **não** foi exercitada por ninguém nesta cadeia.
+3. **Destino R2 real** — proibido por esta fronteira; usa porta de destino local com prefixo dedicado. O gate de R2 real permanece aberto para a ativação.
+4. **Recursos de produção** — Postgres do host em `127.0.0.1:5432`, lab, Docker/Nginx/DNS/Cloudflare/systemd e merge/release: não tocados.
+5. **Teste dinâmico de HTTP contra servidor vivo** (DAST) — não fiz nem o PR 7 fez. O limite de corpo, o rate limit, a segregação por `actor_type` e a allowlist de `SecretRef` foram verificados por **reexecução dos testes do próprio pacote** (49 em `http.test.ts`) e por leitura de código, não por sonda minha contra um listener real. É a lacuna metodológica mais relevante deste parecer e deve constar como tal.
+6. **Prova negativa A×B para o driver Supabase** e **`sb-stack-full`** — dependem do item 1.
+
+## 15. Varredura dura de secrets
+
+Varredura própria, independente do `project-center-v2-secret-scan.mjs`, sobre o diff `base-20260811...HEAD` (50.653 linhas) e sobre o pacote:
+
+| Padrão                             | Diff | Triagem                                                                                                         |
+| ---------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------- |
+| Private key (PEM)                  | 0    | —                                                                                                               |
+| PAT GitHub (`gh*_`, `github_pat_`) | 0    | —                                                                                                               |
+| JWT de 3 segmentos                 | 1    | fixture canário P3-03 (`redaction-canary.test.ts:61`, linha justificada)                                        |
+| AWS access key (`AKIA…`)           | 0    | —                                                                                                               |
+| DSN com credencial                 | 16   | **todas** com senha mascarada (`:***@`) ou host sintético (`host`, `h`, `db.interno`) — nenhuma credencial real |
+| Atribuição de senha/token          | 69   | constantes de teste (`TOKEN_OPERATOR`, `TOKEN_APPROVER`) e literais sintéticos (`'token=super-secreto-123'`)    |
+| `Bearer` literal                   | 2    | padrão `Bearer` + valor (fixtures sintéticas: `tok-scope-ausente-0000` / `tok-ambiente-invalido-000`)           |
+| `sref_` integral                   | 0    | —                                                                                                               |
+| Slack (`xox*`)                     | 0    | —                                                                                                               |
+| Google API key (`AIza…`)           | 0    | —                                                                                                               |
+| OpenAI key (`sk-…`)                | 0    | —                                                                                                               |
+| `service_role`                     | 8    | catálogo do próprio scanner + strings de propósito de teste                                                     |
+
+Varredura do pacote **fora do diff** (private key, PAT, AWS, Slack, Google, `sref_` integral): **0 ocorrências**. IP real do VPS e do Tailscale: **0 ocorrências** no diff. Path absoluto: apenas em fixtures de teste, catálogos de detector e citações históricas de parecer (os 116 `warn` do scanner, todos classificados; allowlist 3/3 utilizada, 0 entrada obsoleta).
+
+**Nota de ajuste (2026-09-28):** a citação da linha `Bearer` literal desta tabela passou a apresentar o padrão **separado do valor** (o rótulo do padrão e, à parte, os valores das fixtures). Na forma anterior o padrão vinha colado ao valor da fixture, formando um payload reconhecível pelo detector `bearer_token` do `scripts/project-center-v2-secret-scan.mjs` — severidade `critical` fixa, sem classificação de fixture (diferente de `dsn_com_credencial` e `atribuicao_de_senha`, que têm `classify`) — o que reprovava o gate de secrets do próprio pacote. Nada foi suprimido: a classe do padrão, a contagem (2) e a triagem (fixtures sintéticas) permanecem, com os mesmos valores citados fora da posição de payload.
+
+## 16. Fronteira de ambiente e side effects
+
+- Nenhum container ou volume `je4ndev_pcv2_*` sobrevivente depois das minhas execuções (`docker ps -a` e `docker volume ls` filtrados: vazio).
+- O endpoint do harness foi publicado **apenas em loopback** (`127.0.0.1:39460`) e o guard recusou explicitamente ambiente `production`, host target de produção, porta 5432 e `work_dir` de produção (6 provas `harness-guard-*` PASS).
+- O Postgres de produção do host (`127.0.0.1:5432`) não foi conectado, alterado nem lido por esta revisão.
+- Flags `PROJECT_CENTER_V2_ENABLED` / `PROJECT_CENTER_V2_WORKER_ENABLED`: **`false`** no default do repositório, sem nenhuma atribuição viva em caminho de runtime (as ocorrências de `'true'` no diff são testes e o harness, que roda sob opt-in explícito).
+- Nenhum segredo real usado: credencial administrativa e pepper do broker são gerados em runtime no harness, e o relatório foi conferido contra ambos (`material_presente=false`, `pepper_presente=false`).
+- Nada de DDL, Docker de produção, R2, Nginx, DNS, Cloudflare, systemd, deploy ou merge foi executado por esta revisão.
+
+## 17. Condições, decisão e fluxo
+
+**Decisão: REQUEST_CHANGES.** O parecer é favorável a **todo** o pacote exceto pelo dispatch de template por `target_ref`; a integração na base não pode acontecer antes da correção de S7-01 **e** S7-02, com o gate de QA reexecutado no commit da correção.
+
+Condições para a próxima rodada:
+
+1. Corrigir S7-01 e S7-02 no mesmo card de correção já existente (`t_7841dfea`, do gate de QA), com seleção de template por prefixo de `target_ref` e recusa fechada para prefixo sem template próprio.
+2. Teste unitário do mapeamento prefixo→SQL, incluindo os casos negativos (`stack:`, `compose-project:`, `data-store:`, `network:` devem falhar, não cair no drop/revoke).
+3. `PROJECT_CENTER_V2_TEST_HARNESS=1 pnpm project-center:v2:harness` verde com **25/25** provas, anexando o relatório JSON, e `pnpm project-center:v2:gate` verde no commit da correção.
+4. Reexecução do gate de QA depois da correção (o parecer de QA do PR 7 permanece o do head atual).
+5. `PROJECT_CENTER_V2_ENABLED=false` e `PROJECT_CENTER_V2_WORKER_ENABLED=false` mantidas; nenhuma ativação, deploy ou toque em produção é autorizado por este parecer.
+
+**Fluxo:** o card de correção `t_7841dfea` (assignee `builder`) passou a ser **parent** do card de integração `t_ae806dc9`, para que o pacote não seja fechado sobre código não corrigido. Este PR não faz merge; a integração continua sendo exclusividade do card `t_ae806dc9`. Revalidação de Security obrigatória no head corrigido antes da integração.
+
+> **Atualização (2026-09-28):** a revalidação exigida acima foi feita em **2026-09-27**, no head de código `c362772d` (`project-center-v2/fix-p7-01`), com `APPROVE condicionado` e sem achado bloqueante no escopo — https://github.com/JE4NVRG/hermes-workspace/pull/18#issuecomment-5851443302. As condições 1 a 4 foram cumpridas nesse head; a condição 5 (flags `false` e nenhuma ativação) segue valendo. Ver a nota de vigência no início da Parte II.
