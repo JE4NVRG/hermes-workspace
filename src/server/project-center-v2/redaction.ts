@@ -30,6 +30,16 @@ export const SECRET_REF_FINGERPRINT_PREFIX = 'sref_fp_'
 export const SAFE_PAYLOAD_MAX_PROPERTIES = 30
 /** Profundidade máxima percorrida antes de mascarar o restante. */
 export const MAX_REDACTION_DEPTH = 8
+/** Teto de `evidence_ref` no contrato (`VerificationCheck.evidence_ref`). */
+export const EVIDENCE_REF_MAX_LENGTH = 256
+/**
+ * Forma aceita de `evidence_ref`: referência relativa do contrato, no mesmo
+ * espírito de `ARTIFACT_REF_PATTERN` (`domain.ts`) — sem barra inicial, sem
+ * `://` (URI/DSN), sem `..` (subida de diretório), sem barra invertida e sem
+ * espaço. Vale para o valor **antes** e **depois** da redaction.
+ */
+export const EVIDENCE_REF_PATTERN =
+  /^(?!\/)(?!.*:\/\/)(?!.*\.\.)(?!.*\\)[^\s]+$/
 
 const SECRET_REF_LENGTH = /^[A-Za-z0-9_-]{43,128}$/
 const SHA256_LENGTH = /^[a-f0-9]{64}$/
@@ -178,6 +188,44 @@ export function redactText(text: string): string {
   })
   output = output.replace(WINDOWS_PATH_PATTERN, PATH_MASK)
   return output
+}
+
+/**
+ * Verdadeiro quando o valor está dentro da forma aceita de `evidence_ref`
+ * (teto de 256 caracteres, sem URI, sem barra inicial, sem `..`, sem barra
+ * invertida e sem espaço).
+ */
+export function isEvidenceRef(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= EVIDENCE_REF_MAX_LENGTH &&
+    EVIDENCE_REF_PATTERN.test(value)
+  )
+}
+
+/**
+ * `evidence_ref` seguro para persistir (P3-03).
+ *
+ * O valor chega de um adapter externo (driver, canal de backup ou control
+ * plane) e é dado **não confiável**: só passa se já estiver dentro da forma do
+ * contrato **e** continuar dentro dela depois do catálogo de redaction (que
+ * neutraliza DSN, `sref_` integral, JWT, path absoluto e atribuição sensível).
+ * Qualquer valor fora da forma — URI/DSN, path absoluto, `..`, barra
+ * invertida, acima de 256 caracteres ou de tipo errado — é **descartado**
+ * (`null`), nunca persistido em forma parcial.
+ *
+ * O descarte (e não uma exceção) é deliberado: este produtor roda **depois**
+ * do efeito externo, então lançar erro aqui perderia o desfecho da ação e
+ * poderia disparar nova tentativa do mesmo DDL — o oposto do que a §9 exige.
+ * Perder a referência de evidência é o dano menor; o valor bruto não passa.
+ */
+export function safeEvidenceRef(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  if (!isEvidenceRef(value)) return null
+  const redacted = redactText(value)
+  if (!isEvidenceRef(redacted)) return null
+  return redacted
 }
 
 export interface RedactValueOptions {
