@@ -190,19 +190,19 @@ declarou pendente (provas executadas de verdade); nada aqui autoriza ativação.
 
 ## 10. Comandos e saídas (escopo separado)
 
-| Comando | Exit | Saída resumida |
-| --- | --- | --- |
-| `pnpm project-center:v2:contract` | 0 | `verdict=GO 15/15 checks PASS` (141 `$ref` locais resolvidos, 9 operationIds únicos, 15 estados/23 arestas/5 terminais, RBAC default deny 9/9, 7/7 mutações com `Idempotency-Key`, 24 artefatos referenciados, 38 arquivos de runtime sem ligar as flags) |
-| `pnpm project-center:v2:scan` | 0 | `"critical": 0`, `"warn": 101` — todo warn tem classe justificada (fixture sintética, catálogo de redaction, denylist do próprio scanner, alvo interno do harness, citação histórica) |
-| `node scripts/project-center-v2-discovery-retest.mjs` | 0 | `failures: []` (reteste do pacote de discovery segue GO) |
-| `vitest run src/server/project-center-v2 src/routes/api/project-center src/lib/project-center-v2-*.test.ts` | 0 | 32 arquivos, 566 testes, 0 falhas |
-| `prettier --check <arquivos deste PR>` | 0 | `All matched files use Prettier code style!` |
-| `prettier --check .` | 1 | 523 arquivos **pré-existentes** fora de escopo (nenhum deste PR) |
-| `eslint scripts/project-center-v2-*.mjs` | 0 | 0 erros; 1 aviso: `.mts` não coberto pelo `eslint.config.js` do repositório |
-| `git diff --check project-center-v2/base-20260811...HEAD` | 0 | sem erro de whitespace |
-| `pnpm run build` | 0 | `vite build` concluído (`built in 18.13s`) |
-| `PROJECT_CENTER_V2_TEST_HARNESS=1 tsx scripts/project-center-v2-real-harness.mts --report …` | 1 | 24/25 provas PASS, 1 defeito crítico, 60 comandos reais, 45.9s |
-| `tsx scripts/project-center-v2-real-harness.mts` (sem opt-in) | 2 | `harness efemero exige opt-in explicito` — zero container, zero DDL, zero alteração de arquivo |
+| Comando                                                                                                     | Exit | Saída resumida                                                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm project-center:v2:contract`                                                                           | 0    | `verdict=GO 15/15 checks PASS` (141 `$ref` locais resolvidos, 9 operationIds únicos, 15 estados/23 arestas/5 terminais, RBAC default deny 9/9, 7/7 mutações com `Idempotency-Key`, 24 artefatos referenciados, 38 arquivos de runtime sem ligar as flags) |
+| `pnpm project-center:v2:scan`                                                                               | 0    | `"critical": 0`, `"warn": 101` — todo warn tem classe justificada (fixture sintética, catálogo de redaction, denylist do próprio scanner, alvo interno do harness, citação histórica)                                                                     |
+| `node scripts/project-center-v2-discovery-retest.mjs`                                                       | 0    | `failures: []` (reteste do pacote de discovery segue GO)                                                                                                                                                                                                  |
+| `vitest run src/server/project-center-v2 src/routes/api/project-center src/lib/project-center-v2-*.test.ts` | 0    | 32 arquivos, 566 testes, 0 falhas                                                                                                                                                                                                                         |
+| `prettier --check <arquivos deste PR>`                                                                      | 0    | `All matched files use Prettier code style!`                                                                                                                                                                                                              |
+| `prettier --check .`                                                                                        | 1    | 523 arquivos **pré-existentes** fora de escopo (nenhum deste PR)                                                                                                                                                                                          |
+| `eslint scripts/project-center-v2-*.mjs`                                                                    | 0    | 0 erros; 1 aviso: `.mts` não coberto pelo `eslint.config.js` do repositório                                                                                                                                                                               |
+| `git diff --check project-center-v2/base-20260811...HEAD`                                                   | 0    | sem erro de whitespace                                                                                                                                                                                                                                    |
+| `pnpm run build`                                                                                            | 0    | `vite build` concluído (`built in 18.13s`)                                                                                                                                                                                                                |
+| `PROJECT_CENTER_V2_TEST_HARNESS=1 tsx scripts/project-center-v2-real-harness.mts --report …`                | 1    | 24/25 provas PASS, 1 defeito crítico, 60 comandos reais, 45.9s                                                                                                                                                                                            |
+| `tsx scripts/project-center-v2-real-harness.mts` (sem opt-in)                                               | 2    | `harness efemero exige opt-in explicito` — zero container, zero DDL, zero alteração de arquivo                                                                                                                                                            |
 
 ## 11. Provas reais em harness efémero
 
@@ -211,33 +211,33 @@ endpoint em loopback e teardown verificado (container, volume, clientes efémero
 e work dir removidos; `teardown-sem-residuo` PASS, `sem-vazamento-de-material`
 PASS). 24 das 25 provas passaram:
 
-| Prova | Status | Evidência |
-| --- | --- | --- |
-| `harness-guard-opt-in` | PASS | guard aceita só com opt-in e endpoint/work dir dentro da janela efémera |
-| `harness-guard-recusa-ambiente-production` | PASS | `HarnessGuardError` (fail closed) |
-| `harness-guard-recusa-host-target-producao` | PASS | `HarnessGuardError` (fail closed) |
-| `harness-guard-recusa-porta-5432` | PASS | `HarnessGuardError` (fail closed) |
-| `harness-guard-recusa-work-dir-producao` | PASS | `HarnessGuardError` (fail closed) |
-| `harness-guard-recusa-porta-fora-da-janela` | PASS | `HarnessGuardError` (fail closed) |
-| `container-efemero` | PASS | nome/volume derivados de UUID, porta efémera, imagem pinada |
-| `servidor-real` | PASS | `server_version=17.11` respondendo por TCP |
-| `provisiona-dois-projetos` | PASS | A e B em `verifying`, **0 publicados** antes da verificação |
-| `backup-por-projeto` | PASS | dump real de A (`1375` bytes, checksum, prefixo dedicado, retenção 30d) |
-| `prova-negativa-a-b` | PASS | A→A `exit=0`; A→B `exit=2`; B→A `exit=2` (isolamento cruzado real) |
-| `restore-efemero-verificado` | PASS | restore real com bytes conferidos, canário contado e alvo destruído |
-| `verificacao-e-restore-efemero` | PASS | A publica só depois de PASS; alvo efémero destruído |
-| `replay-sem-duplicacao` | PASS | tick pós-conclusão reexecuta 0 DDL (11 antes, 11 depois) |
-| `reentrega-conflita-sem-duplicar` | PASS | reentrega com `outbox_id` novo é recusada na revalidação (`estado_nao_executavel`), 0 comandos novos, 0 duplicação |
-| `falha-transitoria-reconciliavel` | PASS | conexão recusada agenda retry (`tentativa 2/3`), estado parcial zero |
-| `retry-conclui-sem-duplicar` | PASS | retry conclui com exatamente 1 database e 1 role |
-| `falha-parcial-escala-manual` | PASS | database pré-existente ⇒ `manual_intervention_required` |
-| `lease-stale-recusado` | PASS | `LeaseHeldError` para segundo writer; `StaleWriterError` para token velho, 0 comandos novos, fencing 3→4 |
-| `rollback-com-gate-proprio` | PASS | hash e aprovação próprios; remove os 2 recursos do projeto e preserva o par |
-| `rollback-alvo-role-nao-remove-role` | **FAIL** | **DEFEITO P7-01 (crítica)** — detalhe na seção 12 |
-| `rollback-preserva-preexistente` | PASS | recurso sem proveniência recusa o plano e vai para manual sem remover nada |
-| `flags-desligadas` | PASS | `FeatureDisabledError`, 0 DDL novo com o default do repositório |
-| `teardown-sem-residuo` | PASS | container, volume e clientes efémeros ausentes após o run |
-| `sem-vazamento-de-material` | PASS | nenhuma credencial/pepper sintético na evidência (51.393 bytes varridos) |
+| Prova                                       | Status   | Evidência                                                                                                          |
+| ------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| `harness-guard-opt-in`                      | PASS     | guard aceita só com opt-in e endpoint/work dir dentro da janela efémera                                            |
+| `harness-guard-recusa-ambiente-production`  | PASS     | `HarnessGuardError` (fail closed)                                                                                  |
+| `harness-guard-recusa-host-target-producao` | PASS     | `HarnessGuardError` (fail closed)                                                                                  |
+| `harness-guard-recusa-porta-5432`           | PASS     | `HarnessGuardError` (fail closed)                                                                                  |
+| `harness-guard-recusa-work-dir-producao`    | PASS     | `HarnessGuardError` (fail closed)                                                                                  |
+| `harness-guard-recusa-porta-fora-da-janela` | PASS     | `HarnessGuardError` (fail closed)                                                                                  |
+| `container-efemero`                         | PASS     | nome/volume derivados de UUID, porta efémera, imagem pinada                                                        |
+| `servidor-real`                             | PASS     | `server_version=17.11` respondendo por TCP                                                                         |
+| `provisiona-dois-projetos`                  | PASS     | A e B em `verifying`, **0 publicados** antes da verificação                                                        |
+| `backup-por-projeto`                        | PASS     | dump real de A (`1375` bytes, checksum, prefixo dedicado, retenção 30d)                                            |
+| `prova-negativa-a-b`                        | PASS     | A→A `exit=0`; A→B `exit=2`; B→A `exit=2` (isolamento cruzado real)                                                 |
+| `restore-efemero-verificado`                | PASS     | restore real com bytes conferidos, canário contado e alvo destruído                                                |
+| `verificacao-e-restore-efemero`             | PASS     | A publica só depois de PASS; alvo efémero destruído                                                                |
+| `replay-sem-duplicacao`                     | PASS     | tick pós-conclusão reexecuta 0 DDL (11 antes, 11 depois)                                                           |
+| `reentrega-conflita-sem-duplicar`           | PASS     | reentrega com `outbox_id` novo é recusada na revalidação (`estado_nao_executavel`), 0 comandos novos, 0 duplicação |
+| `falha-transitoria-reconciliavel`           | PASS     | conexão recusada agenda retry (`tentativa 2/3`), estado parcial zero                                               |
+| `retry-conclui-sem-duplicar`                | PASS     | retry conclui com exatamente 1 database e 1 role                                                                   |
+| `falha-parcial-escala-manual`               | PASS     | database pré-existente ⇒ `manual_intervention_required`                                                            |
+| `lease-stale-recusado`                      | PASS     | `LeaseHeldError` para segundo writer; `StaleWriterError` para token velho, 0 comandos novos, fencing 3→4           |
+| `rollback-com-gate-proprio`                 | PASS     | hash e aprovação próprios; remove os 2 recursos do projeto e preserva o par                                        |
+| `rollback-alvo-role-nao-remove-role`        | **FAIL** | **DEFEITO P7-01 (crítica)** — detalhe na seção 12                                                                  |
+| `rollback-preserva-preexistente`            | PASS     | recurso sem proveniência recusa o plano e vai para manual sem remover nada                                         |
+| `flags-desligadas`                          | PASS     | `FeatureDisabledError`, 0 DDL novo com o default do repositório                                                    |
+| `teardown-sem-residuo`                      | PASS     | container, volume e clientes efémeros ausentes após o run                                                          |
+| `sem-vazamento-de-material`                 | PASS     | nenhuma credencial/pepper sintético na evidência (51.393 bytes varridos)                                           |
 
 ## 12. Achado P7-01 (crítica) — rollback de alvo `role:` apaga o database
 
@@ -259,7 +259,7 @@ ser marcado como concluído.
 2. Existe **um único** template para o kind no catálogo
    (`postgresql_isolated:drop_resource_created_by_operation`), e o `argv` dele
    usa `{{sql:drop_database}}` fixo — `DROP DATABASE IF EXISTS {{database}}
-   WITH (FORCE)`. O SQL `drop_role` (`DROP ROLE IF EXISTS {{app_role}}`) está
+WITH (FORCE)`. O SQL `drop_role` (`DROP ROLE IF EXISTS {{app_role}}`) está
    definido em `ADMIN_SQL_TEMPLATES` e **nunca é referenciado** por nenhum
    template: é código morto.
 
@@ -353,12 +353,12 @@ crítico (P7-01) no caminho de rollback. NO-GO operacional mantido.**
 
 ## 17. Execução própria no head do PR
 
-| Comando / evidência | Resultado independente |
-| --- | --- |
+| Comando / evidência                                                                                                            | Resultado independente                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PROJECT_CENTER_V2_TEST_HARNESS=1 node_modules/.bin/tsx scripts/project-center-v2-real-harness.mts --report <arquivo-efêmero>` | exit 0, **25/25 PASS**, 0 defeitos, 60 comandos reais; run `f82c6b01-2da3-4bc4-b422-49b635e7bc70`; relatório próprio da task, não o `p7-fix-report.json` do implementador. |
-| `pnpm project-center:v2:gate` | exit 0: contrato GO 15/15, scanner PASS critical=0 (116 avisos classificados), **32 arquivos/568 testes PASS**. |
-| `git diff --check 2aef8cec..HEAD` | exit 0. |
-| `docker inspect je4ndev_pcv2_f82c6b012da3` e `docker volume inspect je4ndev_pcv2_f82c6b012da3_data` após teardown | Ambos respondem `no such object/volume`; nenhuma limpeza global. |
+| `pnpm project-center:v2:gate`                                                                                                  | exit 0: contrato GO 15/15, scanner PASS critical=0 (116 avisos classificados), **32 arquivos/568 testes PASS**.                                                            |
+| `git diff --check 2aef8cec..HEAD`                                                                                              | exit 0.                                                                                                                                                                    |
+| `docker inspect je4ndev_pcv2_f82c6b012da3` e `docker volume inspect je4ndev_pcv2_f82c6b012da3_data` após teardown              | Ambos respondem `no such object/volume`; nenhuma limpeza global.                                                                                                           |
 
 O harness criou Postgres 17.11 isolado em `127.0.0.1:32936`, container/volume identificados pelo UUID acima; recusou explicitamente porta 5432 e host/work dir de produção. A prova `rollback-com-gate-proprio` passou: hash de plano de 64 caracteres, aprovação vinculada ao hash, duas ações executadas, database alvo removido e databases A/B preservados (asserções em `scripts/project-center-v2-real-harness.mts`, seção da prova 10). A prova `rollback-alvo-role-nao-remove-role` também passou: role `je4ndev_harness_retry_app` ausente após rollback; a trilha `drop_commands` contém **`DROP DATABASE IF EXISTS je4ndev_harness_retry WITH (FORCE)`** e **`DROP ROLE IF EXISTS je4ndev_harness_retry_app`**, ambos `exit_code=0`, na porta efêmera, e os databases A/B permanecem. `rollback-preserva-preexistente`, `flags-desligadas`, `teardown-sem-residuo` e `sem-vazamento-de-material` passaram. Os logs e o relatório próprio estão anexados à task de QA; o relatório versionado do PR é evidência adicional, não a fonte desta decisão.
 
