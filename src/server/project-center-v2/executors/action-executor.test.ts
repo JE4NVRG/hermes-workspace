@@ -61,6 +61,76 @@ const FLAGS_ON = resolveProjectCenterV2Flags({
 })
 const FLAGS_OFF = resolveProjectCenterV2Flags({})
 
+describe('rollback por tipo de recurso', () => {
+  it('seleciona somente SQL do alvo PostgreSQL e recusa prefixos sem implementação', () => {
+    const cases = [
+      [
+        'drop_resource_created_by_operation',
+        `database:${NAMING.database}`,
+        'DROP DATABASE',
+      ],
+      [
+        'drop_resource_created_by_operation',
+        `role:${NAMING.app_role}`,
+        'DROP ROLE',
+      ],
+      [
+        'drop_resource_created_by_operation',
+        `app-role:${NAMING.app_role}`,
+        'DROP ROLE',
+      ],
+      [
+        'disable_resource',
+        `database:${NAMING.database}`,
+        'REVOKE ALL ON DATABASE',
+      ],
+    ] as const
+    for (const [kind, target, sql] of cases) {
+      const template = templateFor(kind, 'postgresql_isolated', target)
+      const argv = renderActionTemplate(template, {
+        host: '127.0.0.1',
+        port: 39460,
+        admin_role: 'je4ndev_pcv2_admin',
+        database: NAMING.database,
+        app_role: NAMING.app_role,
+      })
+      expect(argv.at(-1)).toContain(sql)
+      expect(template.template_id).toContain(
+        target.slice(0, target.indexOf(':')) === 'app-role'
+          ? 'app-role'
+          : target.slice(0, target.indexOf(':')),
+      )
+    }
+    for (const kind of [
+      'disable_resource',
+      'drop_resource_created_by_operation',
+    ] as const) {
+      for (const prefix of [
+        'stack:',
+        'compose-project:',
+        'data-store:',
+        'network:',
+      ]) {
+        expect(() =>
+          templateFor(kind, 'postgresql_isolated', `${prefix}safe`),
+        ).toThrowError(ActionNotAllowedError)
+      }
+      expect(() =>
+        templateFor(kind, 'supabase_isolated', `database:${NAMING.database}`),
+      ).toThrowError(ActionNotAllowedError)
+    }
+    for (const prefix of ['role:', 'app-role:']) {
+      expect(() =>
+        templateFor(
+          'disable_resource',
+          'postgresql_isolated',
+          `${prefix}${NAMING.app_role}`,
+        ),
+      ).toThrowError(ActionNotAllowedError)
+    }
+  })
+})
+
 interface FakeAdapter {
   readonly calls: ReadonlyArray<ProcessRunInputLike>
   run: (input: ProcessRunInputLike) => Promise<{
@@ -209,6 +279,30 @@ function createHarness(
 }
 
 describe('action executor — flags e catálogo fechado', () => {
+  it('recusa alvo de outro projeto e rollback Supabase antes do adapter', async () => {
+    const harness = createHarness()
+    const action = plannedAction({
+      kind: 'drop_resource_created_by_operation',
+      target_ref: 'role:je4ndev_other_app',
+      risk: 'destructive',
+      reversible: false,
+    })
+    await expect(
+      harness.executor.execute({
+        action,
+        context: harness.context,
+        observedRevision: OBSERVED_REVISION,
+      }),
+    ).rejects.toBeInstanceOf(ActionNotAllowedError)
+    await expect(
+      harness.executor.execute({
+        action: { ...action, target_ref: `role:${NAMING.app_role}` },
+        context: { ...harness.context, driver: 'supabase_isolated' },
+        observedRevision: OBSERVED_REVISION,
+      }),
+    ).rejects.toBeInstanceOf(ActionNotAllowedError)
+    expect(harness.calls()).toBe(0)
+  })
   it('com flags desligadas nada é executado e o adapter não é tocado', async () => {
     const harness = createHarness({ flags: FLAGS_OFF })
     await expect(

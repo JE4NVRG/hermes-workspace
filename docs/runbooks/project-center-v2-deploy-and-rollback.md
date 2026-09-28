@@ -74,29 +74,20 @@ executa. Confirmar sempre o par.
 
 ## 6. Ponto obrigatório de atenção operacional — remoção de role
 
-**Achado P7-01 (crítico), medido em harness efémero real:** o kind
-`drop_resource_created_by_operation` aceita os prefixos `role:` e `app-role:`,
-mas o template `postgresql_isolated:drop_resource_created_by_operation` tem SQL
-fixo em `DROP DATABASE IF EXISTS {{database}} WITH (FORCE)`. Uma ação de
-rollback com alvo `role:<app_role>` portanto **apaga o database do projeto em
-vez da role**, e a role permanece órfã.
+**P7-01 e S7-02 corrigidos no executor PostgreSQL isolado:** a seleção agora
+inclui o prefixo do `target_ref`. `database:` executa `DROP DATABASE` no drop
+e `REVOKE ALL ON DATABASE` no disable; `role:` e `app-role:` executam
+`DROP ROLE` apenas no drop. `disable_resource` de role e ambos os kinds para
+`stack:`, `compose-project:`, `data-store:` e `network:` recusam com
+`ActionNotAllowedError` (`resource_template_not_supported`) antes do adapter.
+Nunca interpretar essa recusa como sucesso: preservar os recursos e escalar
+para intervenção manual/reconciliação com inventário de ownership.
 
-Consequências operacionais, enquanto o defeito não for corrigido:
-
-1. Um rollback que inclua o alvo `role:` remove o database e **deixa a role**.
-   Um reprovisionamento posterior falha em `role already exists` e escala para
-   `manual_intervention_required`.
-2. Nunca tratar "rollback concluído" como "recursos limpos": conferir a role
-   por consulta própria ao catálogo do cluster antes de fechar a janela.
-
-Remediação mínima de janela (manual e auditada, nunca automática):
-
-1. Confirmar, por consulta ao catálogo, que a role não é dona de database nem
-   de objeto de outro projeto (`pg_database`, `pg_roles`, `pg_shdepend`).
-2. Rodar `DROP ROLE IF EXISTS <app_role>` **como provisionador dedicado**, com
-   janela aberta e registro de auditoria (quem, quando, operação de origem).
-3. Registrar o passo manual na reconciliação da operação e manter as flags
-   desligadas até o defeito ser corrigido e revalidado.
+Para `supabase_isolated`, **decisão explícita de recusa** dos dois kinds de
+rollback (`resource_template_not_supported`) inclusive no canal stack: não há
+template de operação por recurso nem stack adapter de produção validado. Só
+habilitar após implementação própria, prova isolada e novos gates de QA e
+Security. Flags permanecem desligadas; esta correção não autoriza deploy.
 
 ## 7. Operação em `manual_intervention_required`
 
