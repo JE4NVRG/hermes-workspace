@@ -172,6 +172,15 @@ import { Route as ApiMcpHubSourcesIdRouteImport } from './routes/api/mcp/hub-sou
 import { Route as ApiMcpNameLogsRouteImport } from './routes/api/mcp/$name.logs'
 import { Route as ApiHermesworldReservationsConfirmRouteImport } from './routes/api/hermesworld/reservations/confirm'
 import { Route as ApiRunsSessionKeyRunIdAbandonRouteImport } from './routes/api/runs/$sessionKey.$runId.abandon'
+import { Route as ApiProjectCenterV2OperationsDryRunRouteImport } from './routes/api/project-center/v2/operations/dry-run'
+import { Route as ApiProjectCenterV2OperationsOperationIdRouteImport } from './routes/api/project-center/v2/operations/$operationId'
+import { Route as ApiProjectCenterV2OperationsOperationIdVerifyRouteImport } from './routes/api/project-center/v2/operations/$operationId/verify'
+import { Route as ApiProjectCenterV2OperationsOperationIdExecuteRouteImport } from './routes/api/project-center/v2/operations/$operationId/execute'
+import { Route as ApiProjectCenterV2OperationsOperationIdAuditRouteImport } from './routes/api/project-center/v2/operations/$operationId/audit'
+import { Route as ApiProjectCenterV2OperationsOperationIdApproveRouteImport } from './routes/api/project-center/v2/operations/$operationId/approve'
+import { Route as ApiProjectCenterV2OperationsOperationIdRollbackExecuteRouteImport } from './routes/api/project-center/v2/operations/$operationId/rollback/execute'
+import { Route as ApiProjectCenterV2OperationsOperationIdRollbackDryRunRouteImport } from './routes/api/project-center/v2/operations/$operationId/rollback/dry-run'
+import { Route as ApiProjectCenterV2OperationsOperationIdRollbackApproveRouteImport } from './routes/api/project-center/v2/operations/$operationId/rollback/approve'
 
 const WorldRoute = WorldRouteImport.update({
   id: '/world',
@@ -996,6 +1005,60 @@ const ApiRunsSessionKeyRunIdAbandonRoute =
     path: '/api/runs/$sessionKey/$runId/abandon',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiProjectCenterV2OperationsDryRunRoute =
+  ApiProjectCenterV2OperationsDryRunRouteImport.update({
+    id: '/api/project-center/v2/operations/dry-run',
+    path: '/api/project-center/v2/operations/dry-run',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiProjectCenterV2OperationsOperationIdRoute =
+  ApiProjectCenterV2OperationsOperationIdRouteImport.update({
+    id: '/api/project-center/v2/operations/$operationId',
+    path: '/api/project-center/v2/operations/$operationId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiProjectCenterV2OperationsOperationIdVerifyRoute =
+  ApiProjectCenterV2OperationsOperationIdVerifyRouteImport.update({
+    id: '/verify',
+    path: '/verify',
+    getParentRoute: () => ApiProjectCenterV2OperationsOperationIdRoute,
+  } as any)
+const ApiProjectCenterV2OperationsOperationIdExecuteRoute =
+  ApiProjectCenterV2OperationsOperationIdExecuteRouteImport.update({
+    id: '/execute',
+    path: '/execute',
+    getParentRoute: () => ApiProjectCenterV2OperationsOperationIdRoute,
+  } as any)
+const ApiProjectCenterV2OperationsOperationIdAuditRoute =
+  ApiProjectCenterV2OperationsOperationIdAuditRouteImport.update({
+    id: '/audit',
+    path: '/audit',
+    getParentRoute: () => ApiProjectCenterV2OperationsOperationIdRoute,
+  } as any)
+const ApiProjectCenterV2OperationsOperationIdApproveRoute =
+  ApiProjectCenterV2OperationsOperationIdApproveRouteImport.update({
+    id: '/approve',
+    path: '/approve',
+    getParentRoute: () => ApiProjectCenterV2OperationsOperationIdRoute,
+  } as any)
+const ApiProjectCenterV2OperationsOperationIdRollbackExecuteRoute =
+  ApiProjectCenterV2OperationsOperationIdRollbackExecuteRouteImport.update({
+    id: '/rollback/execute',
+    path: '/rollback/execute',
+    getParentRoute: () => ApiProjectCenterV2OperationsOperationIdRoute,
+  } as any)
+const ApiProjectCenterV2OperationsOperationIdRollbackDryRunRoute =
+  ApiProjectCenterV2OperationsOperationIdRollbackDryRunRouteImport.update({
+    id: '/rollback/dry-run',
+    path: '/rollback/dry-run',
+    getParentRoute: () => ApiProjectCenterV2OperationsOperationIdRoute,
+  } as any)
+const ApiProjectCenterV2OperationsOperationIdRollbackApproveRoute =
+  ApiProjectCenterV2OperationsOperationIdRollbackApproveRouteImport.update({
+    id: '/rollback/approve',
+    path: '/rollback/approve',
+    getParentRoute: () => ApiProjectCenterV2OperationsOperationIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -1160,7 +1223,16 @@ export interface FileRoutesByFullPath {
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
   '/api/sessions/$sessionKey/active-run': typeof ApiSessionsSessionKeyActiveRunRoute
   '/api/sessions/$sessionKey/status': typeof ApiSessionsSessionKeyStatusRoute
+  '/api/project-center/v2/operations/$operationId': typeof ApiProjectCenterV2OperationsOperationIdRouteWithChildren
+  '/api/project-center/v2/operations/dry-run': typeof ApiProjectCenterV2OperationsDryRunRoute
   '/api/runs/$sessionKey/$runId/abandon': typeof ApiRunsSessionKeyRunIdAbandonRoute
+  '/api/project-center/v2/operations/$operationId/approve': typeof ApiProjectCenterV2OperationsOperationIdApproveRoute
+  '/api/project-center/v2/operations/$operationId/audit': typeof ApiProjectCenterV2OperationsOperationIdAuditRoute
+  '/api/project-center/v2/operations/$operationId/execute': typeof ApiProjectCenterV2OperationsOperationIdExecuteRoute
+  '/api/project-center/v2/operations/$operationId/verify': typeof ApiProjectCenterV2OperationsOperationIdVerifyRoute
+  '/api/project-center/v2/operations/$operationId/rollback/approve': typeof ApiProjectCenterV2OperationsOperationIdRollbackApproveRoute
+  '/api/project-center/v2/operations/$operationId/rollback/dry-run': typeof ApiProjectCenterV2OperationsOperationIdRollbackDryRunRoute
+  '/api/project-center/v2/operations/$operationId/rollback/execute': typeof ApiProjectCenterV2OperationsOperationIdRollbackExecuteRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -1324,7 +1396,16 @@ export interface FileRoutesByTo {
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
   '/api/sessions/$sessionKey/active-run': typeof ApiSessionsSessionKeyActiveRunRoute
   '/api/sessions/$sessionKey/status': typeof ApiSessionsSessionKeyStatusRoute
+  '/api/project-center/v2/operations/$operationId': typeof ApiProjectCenterV2OperationsOperationIdRouteWithChildren
+  '/api/project-center/v2/operations/dry-run': typeof ApiProjectCenterV2OperationsDryRunRoute
   '/api/runs/$sessionKey/$runId/abandon': typeof ApiRunsSessionKeyRunIdAbandonRoute
+  '/api/project-center/v2/operations/$operationId/approve': typeof ApiProjectCenterV2OperationsOperationIdApproveRoute
+  '/api/project-center/v2/operations/$operationId/audit': typeof ApiProjectCenterV2OperationsOperationIdAuditRoute
+  '/api/project-center/v2/operations/$operationId/execute': typeof ApiProjectCenterV2OperationsOperationIdExecuteRoute
+  '/api/project-center/v2/operations/$operationId/verify': typeof ApiProjectCenterV2OperationsOperationIdVerifyRoute
+  '/api/project-center/v2/operations/$operationId/rollback/approve': typeof ApiProjectCenterV2OperationsOperationIdRollbackApproveRoute
+  '/api/project-center/v2/operations/$operationId/rollback/dry-run': typeof ApiProjectCenterV2OperationsOperationIdRollbackDryRunRoute
+  '/api/project-center/v2/operations/$operationId/rollback/execute': typeof ApiProjectCenterV2OperationsOperationIdRollbackExecuteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -1490,7 +1571,16 @@ export interface FileRoutesById {
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
   '/api/sessions/$sessionKey/active-run': typeof ApiSessionsSessionKeyActiveRunRoute
   '/api/sessions/$sessionKey/status': typeof ApiSessionsSessionKeyStatusRoute
+  '/api/project-center/v2/operations/$operationId': typeof ApiProjectCenterV2OperationsOperationIdRouteWithChildren
+  '/api/project-center/v2/operations/dry-run': typeof ApiProjectCenterV2OperationsDryRunRoute
   '/api/runs/$sessionKey/$runId/abandon': typeof ApiRunsSessionKeyRunIdAbandonRoute
+  '/api/project-center/v2/operations/$operationId/approve': typeof ApiProjectCenterV2OperationsOperationIdApproveRoute
+  '/api/project-center/v2/operations/$operationId/audit': typeof ApiProjectCenterV2OperationsOperationIdAuditRoute
+  '/api/project-center/v2/operations/$operationId/execute': typeof ApiProjectCenterV2OperationsOperationIdExecuteRoute
+  '/api/project-center/v2/operations/$operationId/verify': typeof ApiProjectCenterV2OperationsOperationIdVerifyRoute
+  '/api/project-center/v2/operations/$operationId/rollback/approve': typeof ApiProjectCenterV2OperationsOperationIdRollbackApproveRoute
+  '/api/project-center/v2/operations/$operationId/rollback/dry-run': typeof ApiProjectCenterV2OperationsOperationIdRollbackDryRunRoute
+  '/api/project-center/v2/operations/$operationId/rollback/execute': typeof ApiProjectCenterV2OperationsOperationIdRollbackExecuteRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -1657,7 +1747,16 @@ export interface FileRouteTypes {
     | '/api/mcp/hub-sources/$id'
     | '/api/sessions/$sessionKey/active-run'
     | '/api/sessions/$sessionKey/status'
+    | '/api/project-center/v2/operations/$operationId'
+    | '/api/project-center/v2/operations/dry-run'
     | '/api/runs/$sessionKey/$runId/abandon'
+    | '/api/project-center/v2/operations/$operationId/approve'
+    | '/api/project-center/v2/operations/$operationId/audit'
+    | '/api/project-center/v2/operations/$operationId/execute'
+    | '/api/project-center/v2/operations/$operationId/verify'
+    | '/api/project-center/v2/operations/$operationId/rollback/approve'
+    | '/api/project-center/v2/operations/$operationId/rollback/dry-run'
+    | '/api/project-center/v2/operations/$operationId/rollback/execute'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -1821,7 +1920,16 @@ export interface FileRouteTypes {
     | '/api/mcp/hub-sources/$id'
     | '/api/sessions/$sessionKey/active-run'
     | '/api/sessions/$sessionKey/status'
+    | '/api/project-center/v2/operations/$operationId'
+    | '/api/project-center/v2/operations/dry-run'
     | '/api/runs/$sessionKey/$runId/abandon'
+    | '/api/project-center/v2/operations/$operationId/approve'
+    | '/api/project-center/v2/operations/$operationId/audit'
+    | '/api/project-center/v2/operations/$operationId/execute'
+    | '/api/project-center/v2/operations/$operationId/verify'
+    | '/api/project-center/v2/operations/$operationId/rollback/approve'
+    | '/api/project-center/v2/operations/$operationId/rollback/dry-run'
+    | '/api/project-center/v2/operations/$operationId/rollback/execute'
   id:
     | '__root__'
     | '/'
@@ -1986,7 +2094,16 @@ export interface FileRouteTypes {
     | '/api/mcp/hub-sources/$id'
     | '/api/sessions/$sessionKey/active-run'
     | '/api/sessions/$sessionKey/status'
+    | '/api/project-center/v2/operations/$operationId'
+    | '/api/project-center/v2/operations/dry-run'
     | '/api/runs/$sessionKey/$runId/abandon'
+    | '/api/project-center/v2/operations/$operationId/approve'
+    | '/api/project-center/v2/operations/$operationId/audit'
+    | '/api/project-center/v2/operations/$operationId/execute'
+    | '/api/project-center/v2/operations/$operationId/verify'
+    | '/api/project-center/v2/operations/$operationId/rollback/approve'
+    | '/api/project-center/v2/operations/$operationId/rollback/dry-run'
+    | '/api/project-center/v2/operations/$operationId/rollback/execute'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -2121,6 +2238,8 @@ export interface RootRouteChildren {
   ApiUpdateStatusRoute: typeof ApiUpdateStatusRoute
   ApiUpdateWorkspaceRoute: typeof ApiUpdateWorkspaceRoute
   ApiWebhooksGithubRoute: typeof ApiWebhooksGithubRoute
+  ApiProjectCenterV2OperationsOperationIdRoute: typeof ApiProjectCenterV2OperationsOperationIdRouteWithChildren
+  ApiProjectCenterV2OperationsDryRunRoute: typeof ApiProjectCenterV2OperationsDryRunRoute
   ApiRunsSessionKeyRunIdAbandonRoute: typeof ApiRunsSessionKeyRunIdAbandonRoute
 }
 
@@ -3267,6 +3386,69 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRunsSessionKeyRunIdAbandonRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/project-center/v2/operations/dry-run': {
+      id: '/api/project-center/v2/operations/dry-run'
+      path: '/api/project-center/v2/operations/dry-run'
+      fullPath: '/api/project-center/v2/operations/dry-run'
+      preLoaderRoute: typeof ApiProjectCenterV2OperationsDryRunRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/project-center/v2/operations/$operationId': {
+      id: '/api/project-center/v2/operations/$operationId'
+      path: '/api/project-center/v2/operations/$operationId'
+      fullPath: '/api/project-center/v2/operations/$operationId'
+      preLoaderRoute: typeof ApiProjectCenterV2OperationsOperationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/project-center/v2/operations/$operationId/verify': {
+      id: '/api/project-center/v2/operations/$operationId/verify'
+      path: '/verify'
+      fullPath: '/api/project-center/v2/operations/$operationId/verify'
+      preLoaderRoute: typeof ApiProjectCenterV2OperationsOperationIdVerifyRouteImport
+      parentRoute: typeof ApiProjectCenterV2OperationsOperationIdRoute
+    }
+    '/api/project-center/v2/operations/$operationId/execute': {
+      id: '/api/project-center/v2/operations/$operationId/execute'
+      path: '/execute'
+      fullPath: '/api/project-center/v2/operations/$operationId/execute'
+      preLoaderRoute: typeof ApiProjectCenterV2OperationsOperationIdExecuteRouteImport
+      parentRoute: typeof ApiProjectCenterV2OperationsOperationIdRoute
+    }
+    '/api/project-center/v2/operations/$operationId/audit': {
+      id: '/api/project-center/v2/operations/$operationId/audit'
+      path: '/audit'
+      fullPath: '/api/project-center/v2/operations/$operationId/audit'
+      preLoaderRoute: typeof ApiProjectCenterV2OperationsOperationIdAuditRouteImport
+      parentRoute: typeof ApiProjectCenterV2OperationsOperationIdRoute
+    }
+    '/api/project-center/v2/operations/$operationId/approve': {
+      id: '/api/project-center/v2/operations/$operationId/approve'
+      path: '/approve'
+      fullPath: '/api/project-center/v2/operations/$operationId/approve'
+      preLoaderRoute: typeof ApiProjectCenterV2OperationsOperationIdApproveRouteImport
+      parentRoute: typeof ApiProjectCenterV2OperationsOperationIdRoute
+    }
+    '/api/project-center/v2/operations/$operationId/rollback/execute': {
+      id: '/api/project-center/v2/operations/$operationId/rollback/execute'
+      path: '/rollback/execute'
+      fullPath: '/api/project-center/v2/operations/$operationId/rollback/execute'
+      preLoaderRoute: typeof ApiProjectCenterV2OperationsOperationIdRollbackExecuteRouteImport
+      parentRoute: typeof ApiProjectCenterV2OperationsOperationIdRoute
+    }
+    '/api/project-center/v2/operations/$operationId/rollback/dry-run': {
+      id: '/api/project-center/v2/operations/$operationId/rollback/dry-run'
+      path: '/rollback/dry-run'
+      fullPath: '/api/project-center/v2/operations/$operationId/rollback/dry-run'
+      preLoaderRoute: typeof ApiProjectCenterV2OperationsOperationIdRollbackDryRunRouteImport
+      parentRoute: typeof ApiProjectCenterV2OperationsOperationIdRoute
+    }
+    '/api/project-center/v2/operations/$operationId/rollback/approve': {
+      id: '/api/project-center/v2/operations/$operationId/rollback/approve'
+      path: '/rollback/approve'
+      fullPath: '/api/project-center/v2/operations/$operationId/rollback/approve'
+      preLoaderRoute: typeof ApiProjectCenterV2OperationsOperationIdRollbackApproveRouteImport
+      parentRoute: typeof ApiProjectCenterV2OperationsOperationIdRoute
+    }
   }
 }
 
@@ -3482,6 +3664,39 @@ const ApiHermesworldReservationsRouteWithChildren =
     ApiHermesworldReservationsRouteChildren,
   )
 
+interface ApiProjectCenterV2OperationsOperationIdRouteChildren {
+  ApiProjectCenterV2OperationsOperationIdApproveRoute: typeof ApiProjectCenterV2OperationsOperationIdApproveRoute
+  ApiProjectCenterV2OperationsOperationIdAuditRoute: typeof ApiProjectCenterV2OperationsOperationIdAuditRoute
+  ApiProjectCenterV2OperationsOperationIdExecuteRoute: typeof ApiProjectCenterV2OperationsOperationIdExecuteRoute
+  ApiProjectCenterV2OperationsOperationIdVerifyRoute: typeof ApiProjectCenterV2OperationsOperationIdVerifyRoute
+  ApiProjectCenterV2OperationsOperationIdRollbackApproveRoute: typeof ApiProjectCenterV2OperationsOperationIdRollbackApproveRoute
+  ApiProjectCenterV2OperationsOperationIdRollbackDryRunRoute: typeof ApiProjectCenterV2OperationsOperationIdRollbackDryRunRoute
+  ApiProjectCenterV2OperationsOperationIdRollbackExecuteRoute: typeof ApiProjectCenterV2OperationsOperationIdRollbackExecuteRoute
+}
+
+const ApiProjectCenterV2OperationsOperationIdRouteChildren: ApiProjectCenterV2OperationsOperationIdRouteChildren =
+  {
+    ApiProjectCenterV2OperationsOperationIdApproveRoute:
+      ApiProjectCenterV2OperationsOperationIdApproveRoute,
+    ApiProjectCenterV2OperationsOperationIdAuditRoute:
+      ApiProjectCenterV2OperationsOperationIdAuditRoute,
+    ApiProjectCenterV2OperationsOperationIdExecuteRoute:
+      ApiProjectCenterV2OperationsOperationIdExecuteRoute,
+    ApiProjectCenterV2OperationsOperationIdVerifyRoute:
+      ApiProjectCenterV2OperationsOperationIdVerifyRoute,
+    ApiProjectCenterV2OperationsOperationIdRollbackApproveRoute:
+      ApiProjectCenterV2OperationsOperationIdRollbackApproveRoute,
+    ApiProjectCenterV2OperationsOperationIdRollbackDryRunRoute:
+      ApiProjectCenterV2OperationsOperationIdRollbackDryRunRoute,
+    ApiProjectCenterV2OperationsOperationIdRollbackExecuteRoute:
+      ApiProjectCenterV2OperationsOperationIdRollbackExecuteRoute,
+  }
+
+const ApiProjectCenterV2OperationsOperationIdRouteWithChildren =
+  ApiProjectCenterV2OperationsOperationIdRoute._addFileChildren(
+    ApiProjectCenterV2OperationsOperationIdRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SplatRoute: SplatRoute,
@@ -3614,6 +3829,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUpdateStatusRoute: ApiUpdateStatusRoute,
   ApiUpdateWorkspaceRoute: ApiUpdateWorkspaceRoute,
   ApiWebhooksGithubRoute: ApiWebhooksGithubRoute,
+  ApiProjectCenterV2OperationsOperationIdRoute:
+    ApiProjectCenterV2OperationsOperationIdRouteWithChildren,
+  ApiProjectCenterV2OperationsDryRunRoute:
+    ApiProjectCenterV2OperationsDryRunRoute,
   ApiRunsSessionKeyRunIdAbandonRoute: ApiRunsSessionKeyRunIdAbandonRoute,
 }
 export const routeTree = rootRouteImport
