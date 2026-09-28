@@ -242,6 +242,8 @@ A execução real dessas provas **permanece obrigatória** nos PRs 6/7, com `PRO
 - Papel: revisão **independente do autor e do QA** — o gate do PR 7 (`t_7d77038e`) e o parecer de QA (`docs/qa/project-center-v2-final-gate.md`) foram tratados como alegações a reproduzir, não como evidência
 - Escopo operacional: leitura de repositório + harness efémero isolado + container descartável `je4ndev_pcv2_<hex>`. Nenhum recurso de produção foi tocado (seção 16)
 
+> **Nota de vigência (2026-09-28) — esta Parte II está superada pelo head corrigido.** O veredito in-doc abaixo (`REQUEST_CHANGES`, seções 9 e 17) é o parecer sobre o head revisado `2aef8ceca168c80a5429dbd1500559da33e106c9` (`project-center-v2/impl-7-gate`). A correção de S7-01/S7-02 foi entregue em `project-center-v2/fix-p7-01` @ `c362772d` e revalidada por Security em **2026-09-27** com `APPROVE condicionado`, sem achado bloqueante no escopo: https://github.com/JE4NVRG/hermes-workspace/pull/18#issuecomment-5851443302. A Parte II permanece como registro fiel do head original; o estado integrado da base é o do head corrigido. Flags `false` e produção NO-GO seguem valendo.
+
 ## 9. Parecer
 
 **REQUEST_CHANGES — o pacote de implementação não pode ser integrado na base enquanto o alvo do rollback continuar selecionando o SQL pelo `driver:kind` e ignorando o tipo do `target_ref`.**
@@ -392,7 +394,7 @@ Varredura própria, independente do `project-center-v2-secret-scan.mjs`, sobre o
 | AWS access key (`AKIA…`)           | 0    | —                                                                                                               |
 | DSN com credencial                 | 16   | **todas** com senha mascarada (`:***@`) ou host sintético (`host`, `h`, `db.interno`) — nenhuma credencial real |
 | Atribuição de senha/token          | 69   | constantes de teste (`TOKEN_OPERATOR`, `TOKEN_APPROVER`) e literais sintéticos (`'token=super-secreto-123'`)    |
-| `Bearer` literal                   | 2    | `Bearer tok-scope-ausente-0000` / `tok-ambiente-invalido-000` (fixtures)                                        |
+| `Bearer` literal                   | 2    | padrão `Bearer` + valor (fixtures sintéticas: `tok-scope-ausente-0000` / `tok-ambiente-invalido-000`)           |
 | `sref_` integral                   | 0    | —                                                                                                               |
 | Slack (`xox*`)                     | 0    | —                                                                                                               |
 | Google API key (`AIza…`)           | 0    | —                                                                                                               |
@@ -400,6 +402,8 @@ Varredura própria, independente do `project-center-v2-secret-scan.mjs`, sobre o
 | `service_role`                     | 8    | catálogo do próprio scanner + strings de propósito de teste                                                     |
 
 Varredura do pacote **fora do diff** (private key, PAT, AWS, Slack, Google, `sref_` integral): **0 ocorrências**. IP real do VPS e do Tailscale: **0 ocorrências** no diff. Path absoluto: apenas em fixtures de teste, catálogos de detector e citações históricas de parecer (os 116 `warn` do scanner, todos classificados; allowlist 3/3 utilizada, 0 entrada obsoleta).
+
+**Nota de ajuste (2026-09-28):** a citação da linha `Bearer` literal desta tabela passou a apresentar o padrão **separado do valor** (o rótulo do padrão e, à parte, os valores das fixtures). Na forma anterior o padrão vinha colado ao valor da fixture, formando um payload reconhecível pelo detector `bearer_token` do `scripts/project-center-v2-secret-scan.mjs` — severidade `critical` fixa, sem classificação de fixture (diferente de `dsn_com_credencial` e `atribuicao_de_senha`, que têm `classify`) — o que reprovava o gate de secrets do próprio pacote. Nada foi suprimido: a classe do padrão, a contagem (2) e a triagem (fixtures sintéticas) permanecem, com os mesmos valores citados fora da posição de payload.
 
 ## 16. Fronteira de ambiente e side effects
 
@@ -423,3 +427,5 @@ Condições para a próxima rodada:
 5. `PROJECT_CENTER_V2_ENABLED=false` e `PROJECT_CENTER_V2_WORKER_ENABLED=false` mantidas; nenhuma ativação, deploy ou toque em produção é autorizado por este parecer.
 
 **Fluxo:** o card de correção `t_7841dfea` (assignee `builder`) passou a ser **parent** do card de integração `t_ae806dc9`, para que o pacote não seja fechado sobre código não corrigido. Este PR não faz merge; a integração continua sendo exclusividade do card `t_ae806dc9`. Revalidação de Security obrigatória no head corrigido antes da integração.
+
+> **Atualização (2026-09-28):** a revalidação exigida acima foi feita em **2026-09-27**, no head de código `c362772d` (`project-center-v2/fix-p7-01`), com `APPROVE condicionado` e sem achado bloqueante no escopo — https://github.com/JE4NVRG/hermes-workspace/pull/18#issuecomment-5851443302. As condições 1 a 4 foram cumpridas nesse head; a condição 5 (flags `false` e nenhuma ativação) segue valendo. Ver a nota de vigência no início da Parte II.
