@@ -22,42 +22,42 @@
 
 O PR #6 é estritamente documental/contratual: 9 arquivos adicionados, 4.270 linhas, nenhum arquivo de código de aplicação, nenhum Docker/Nginx/systemd/infra.
 
-| Artefato | Linhas | Origem (branch) | Head verificado |
-| --- | --- | --- | --- |
-| `docs/PRD-project-center-v2.md` | 590 | `project-center-v2/prd` | `a743bbda` |
-| `docs/adr/0001-project-center-v2-control-plane.md` | 131 | `project-center-v2/spec` | `e330a83a` |
-| `specs/contracts/project-center-v2.openapi.yaml` | 1042 | `project-center-v2/spec` | `e330a83a` |
-| `specs/features/project-center-v2.spec.md` | 358 | `project-center-v2/spec` | `e330a83a` |
-| `docs/security/project-center-v2-threat-model.md` | 495 | `project-center-v2/security` | `5854da43` |
-| `docs/design/project-center-v2-ux.md` | 539 | `project-center-v2/ux` | `4a291a03` |
-| `docs/plans/project-center-v2-implementation-plan.md` | 310 | sintetizado no PR agregado | `3df6dc77` |
-| `docs/qa/project-center-v2-discovery-review.md` | 387 | `project-center-v2/qa-discovery` | `3df6dc77` |
-| `scripts/project-center-v2-discovery-retest.mjs` | 418 | `project-center-v2/qa-discovery` | `3df6dc77` |
+| Artefato                                              | Linhas | Origem (branch)                  | Head verificado |
+| ----------------------------------------------------- | ------ | -------------------------------- | --------------- |
+| `docs/PRD-project-center-v2.md`                       | 590    | `project-center-v2/prd`          | `a743bbda`      |
+| `docs/adr/0001-project-center-v2-control-plane.md`    | 131    | `project-center-v2/spec`         | `e330a83a`      |
+| `specs/contracts/project-center-v2.openapi.yaml`      | 1042   | `project-center-v2/spec`         | `e330a83a`      |
+| `specs/features/project-center-v2.spec.md`            | 358    | `project-center-v2/spec`         | `e330a83a`      |
+| `docs/security/project-center-v2-threat-model.md`     | 495    | `project-center-v2/security`     | `5854da43`      |
+| `docs/design/project-center-v2-ux.md`                 | 539    | `project-center-v2/ux`           | `4a291a03`      |
+| `docs/plans/project-center-v2-implementation-plan.md` | 310    | sintetizado no PR agregado       | `3df6dc77`      |
+| `docs/qa/project-center-v2-discovery-review.md`       | 387    | `project-center-v2/qa-discovery` | `3df6dc77`      |
+| `scripts/project-center-v2-discovery-retest.mjs`      | 418    | `project-center-v2/qa-discovery` | `3df6dc77`      |
 
 ## 3. Evidência executada
 
 Todas as verificações foram rodadas no worktree `t_a6bdf58b`, sem side effect externo.
 
-| # | Verificação | Comando / ferramenta | Resultado |
-| --- | --- | --- | --- |
-| 1 | Gate versionado do pacote | `node scripts/project-center-v2-discovery-retest.mjs` | **GO — 12/12 checks PASS** (verdict `GO`, `failures: []`) |
-| 2 | Validação OpenAPI independente | `@apidevtools/swagger-parser@13.1.0` → `validate()` | **PASS** — OpenAPI 3.1.0, 9 paths, 34 schemas, `bearerAuth` |
-| 3 | Lint OpenAPI | `npx @redocly/cli@1.34.5 lint specs/contracts/project-center-v2.openapi.yaml` | **PASS** — *"Your API description is valid."* |
-| 4 | Refs locais (resolver próprio, independente do script do PR) | script QA próprio (13 checks) | **PASS** — 135 refs, 0 não resolvidas |
-| 5 | Estados/transições/terminais (PCV2-QA-001) | contagem própria sobre `x-allowed-transitions` | **PASS** — 15 estados, 23 arestas, 0 fora do enum, 0 terminais com saída, inicial `planned` |
-| 6 | RBAC (PCV2-QA-004) | partição `roles[*].operations` × `x-required-scopes` | **PASS** — `default: deny`, 5 roles, 9 `operationId`, 0 órfãs, 0 multi-role, 0 escopo descoberto |
-| 7 | Idempotência (PCV2-QA-005) | 7 mutações POST × `IdempotencyKey` | **PASS** — 7/7 exigem o header |
-| 8 | SecretRef opaca + máscara (PCV2-QA-003) | pattern publicado × exemplo | **PASS** — `^sref_[A-Za-z0-9_-]{43,128}$`, máscara `sref_REDACTED_…` (len 49, casa), `ArtifactRef` condicional presente |
-| 9 | Rollback + approve/reject (PCV2-QA-002/006) | 3 rotas `rollback/*`, `oneOf`/discriminator, segregação | **PASS** — `approval_bound_to: rollback_plan_hash` |
-| 10 | Scan duro de secrets (private key, PAT, DSN com credencial, JWT/service key, `sref_` integral, `Bearer`) | script QA próprio sobre os 9 arquivos | **PASS** — 0 hits |
-| 11 | Scan de path absoluto / `secret://` fora do doc de QA | script QA próprio | **PASS** — 0 ocorrências nos 8 artefatos restantes |
-| 12 | Drift entre head do PR e branches retestadas | `git rev-parse <head>:<path>` vs branch | **PASS** — 6/6 blobs idênticos |
-| 13 | Heads remotos vs SHAs registrados no reteste | `git ls-remote` (SSH) | **PASS** — prd `a743bbda`, spec `e330a83a`, security `5854da43`, ux `4a291a03`, synthesis `3df6dc77` |
-| 14 | Issues citadas existem (antes bloqueado por falta de credencial) | `gh issue list -R JE4NVRG/je4ndev-platform-core` | **PASS** — #2 a #20 existem; token atual válido |
-| 15 | Formatação | `npx prettier@3.8.1 --check` nos 9 arquivos | **PASS** — *"All matched files use Prettier code style!"* |
-| 16 | Whitespace do patch | `git diff --check <base>...3df6dc77` | **PASS** — 0 erros |
-| 17 | Teste escopado da superfície de banco existente | `vitest run src/server/supabase-registry.test.ts` (Node 22.23.2) | **PASS** — 5/5 |
-| 18 | Suíte global do checkout (informativo, fora do escopo do PR) | `vitest run --reporter=basic` (Node 22.23.2) | **42 failed / 710 passed (752)**, 17 arquivos — pré-existente e sem relação com o PR |
+| #   | Verificação                                                                                              | Comando / ferramenta                                                          | Resultado                                                                                                               |
+| --- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 1   | Gate versionado do pacote                                                                                | `node scripts/project-center-v2-discovery-retest.mjs`                         | **GO — 12/12 checks PASS** (verdict `GO`, `failures: []`)                                                               |
+| 2   | Validação OpenAPI independente                                                                           | `@apidevtools/swagger-parser@13.1.0` → `validate()`                           | **PASS** — OpenAPI 3.1.0, 9 paths, 34 schemas, `bearerAuth`                                                             |
+| 3   | Lint OpenAPI                                                                                             | `npx @redocly/cli@1.34.5 lint specs/contracts/project-center-v2.openapi.yaml` | **PASS** — _"Your API description is valid."_                                                                           |
+| 4   | Refs locais (resolver próprio, independente do script do PR)                                             | script QA próprio (13 checks)                                                 | **PASS** — 135 refs, 0 não resolvidas                                                                                   |
+| 5   | Estados/transições/terminais (PCV2-QA-001)                                                               | contagem própria sobre `x-allowed-transitions`                                | **PASS** — 15 estados, 23 arestas, 0 fora do enum, 0 terminais com saída, inicial `planned`                             |
+| 6   | RBAC (PCV2-QA-004)                                                                                       | partição `roles[*].operations` × `x-required-scopes`                          | **PASS** — `default: deny`, 5 roles, 9 `operationId`, 0 órfãs, 0 multi-role, 0 escopo descoberto                        |
+| 7   | Idempotência (PCV2-QA-005)                                                                               | 7 mutações POST × `IdempotencyKey`                                            | **PASS** — 7/7 exigem o header                                                                                          |
+| 8   | SecretRef opaca + máscara (PCV2-QA-003)                                                                  | pattern publicado × exemplo                                                   | **PASS** — `^sref_[A-Za-z0-9_-]{43,128}$`, máscara `sref_REDACTED_…` (len 49, casa), `ArtifactRef` condicional presente |
+| 9   | Rollback + approve/reject (PCV2-QA-002/006)                                                              | 3 rotas `rollback/*`, `oneOf`/discriminator, segregação                       | **PASS** — `approval_bound_to: rollback_plan_hash`                                                                      |
+| 10  | Scan duro de secrets (private key, PAT, DSN com credencial, JWT/service key, `sref_` integral, `Bearer`) | script QA próprio sobre os 9 arquivos                                         | **PASS** — 0 hits                                                                                                       |
+| 11  | Scan de path absoluto / `secret://` fora do doc de QA                                                    | script QA próprio                                                             | **PASS** — 0 ocorrências nos 8 artefatos restantes                                                                      |
+| 12  | Drift entre head do PR e branches retestadas                                                             | `git rev-parse <head>:<path>` vs branch                                       | **PASS** — 6/6 blobs idênticos                                                                                          |
+| 13  | Heads remotos vs SHAs registrados no reteste                                                             | `git ls-remote` (SSH)                                                         | **PASS** — prd `a743bbda`, spec `e330a83a`, security `5854da43`, ux `4a291a03`, synthesis `3df6dc77`                    |
+| 14  | Issues citadas existem (antes bloqueado por falta de credencial)                                         | `gh issue list -R JE4NVRG/je4ndev-platform-core`                              | **PASS** — #2 a #20 existem; token atual válido                                                                         |
+| 15  | Formatação                                                                                               | `npx prettier@3.8.1 --check` nos 9 arquivos                                   | **PASS** — _"All matched files use Prettier code style!"_                                                               |
+| 16  | Whitespace do patch                                                                                      | `git diff --check <base>...3df6dc77`                                          | **PASS** — 0 erros                                                                                                      |
+| 17  | Teste escopado da superfície de banco existente                                                          | `vitest run src/server/supabase-registry.test.ts` (Node 22.23.2)              | **PASS** — 5/5                                                                                                          |
+| 18  | Suíte global do checkout (informativo, fora do escopo do PR)                                             | `vitest run --reporter=basic` (Node 22.23.2)                                  | **42 failed / 710 passed (752)**, 17 arquivos — pré-existente e sem relação com o PR                                    |
 
 Comandos reproduzíveis:
 
@@ -78,14 +78,14 @@ A suíte global exige Node ≥ 22.13 (`pnpm 11.1.3`). O worker expõe `node v20.
 
 ## 4. Critérios do card
 
-| Critério | Resultado | Evidência |
-| --- | --- | --- |
-| OpenAPI parseia | **PASS** | #2 swagger-parser 13.1.0 + #3 Redocly 1.34.5 |
-| Refs existem | **PASS** | #4 — 135 refs locais, 0 não resolvidas (resolver independente do script do PR) |
-| Sem secrets | **PASS** | #10/#11 — 0 hits duros; citações históricas no doc de QA isoladas e justificadas (§5, P3-02) |
-| Rastreabilidade completa | **PASS com 2 lacunas P2** | #5–#9, #12–#14 verdes; achados P2-01/P2-02 abaixo |
+| Critério                                        | Resultado                     | Evidência                                                                                         |
+| ----------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| OpenAPI parseia                                 | **PASS**                      | #2 swagger-parser 13.1.0 + #3 Redocly 1.34.5                                                      |
+| Refs existem                                    | **PASS**                      | #4 — 135 refs locais, 0 não resolvidas (resolver independente do script do PR)                    |
+| Sem secrets                                     | **PASS**                      | #10/#11 — 0 hits duros; citações históricas no doc de QA isoladas e justificadas (§5, P3-02)      |
+| Rastreabilidade completa                        | **PASS com 2 lacunas P2**     | #5–#9, #12–#14 verdes; achados P2-01/P2-02 abaixo                                                 |
 | Testes cross-database/stack, rollback e restore | **NÃO EXECUTÁVEL nesta fase** | §6 — discovery docs-only; cobertura verificada no contrato/plano, sem implementação para executar |
-| APPROVE ou REQUEST_CHANGES com evidência | **APPROVE condicionado** | §1, §7 |
+| APPROVE ou REQUEST_CHANGES com evidência        | **APPROVE condicionado**      | §1, §7                                                                                            |
 
 ## 5. Achados
 
@@ -103,7 +103,7 @@ A suíte global exige Node ≥ 22.13 (`pnpm 11.1.3`). O worker expõe `node v20.
 
 ### P2-02 — PRD fixa o contrato canônico em commit superado (pré-correção da SecretRef)
 
-**Evidência:** `docs/PRD-project-center-v2.md:582` — *"Contrato canônico: `specs/contracts/project-center-v2.openapi.yaml` no branch `project-center-v2/spec` (commit de baseline `0bbe2492`)"*.
+**Evidência:** `docs/PRD-project-center-v2.md:582` — _"Contrato canônico: `specs/contracts/project-center-v2.openapi.yaml` no branch `project-center-v2/spec` (commit de baseline `0bbe2492`)"_.
 
 - `0bbe2492` é ancestral de `e330a83a` (head aprovado), mas **anterior** à correção que tornou a `SecretRef` opaca: `git diff 0bbe2492 e330a83a -- specs/contracts/project-center-v2.openapi.yaml` = **+27/−2**, incluindo `components/schemas/SecretRef`, o `allOf`/`if…then` de `ArtifactRef` e a descrição de `secret_ref`.
 - Ou seja: o PRD aponta como fonte canônica uma revisão **sem** o schema que resolve o P0/P1 do PCV2-QA-003.
